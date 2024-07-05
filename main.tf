@@ -61,3 +61,17 @@ resource "aws_lb_target_group" "this" {
   }
   tags = local.all_tags
 }
+
+
+resource "aws_lb_target_group_attachment" "this" {
+  for_each = merge([
+    for k, v in var.target_groups : {
+      for target_id in try(v.target_ids, []) : "${k}-${target_id}" => {
+        target_group_arn = aws_lb_target_group.this[k].arn
+        target_id        = target_id
+      }
+    }
+  ]...)
+  target_group_arn = each.value.target_group_arn
+  target_id        = each.value.target_id
+}
