@@ -157,35 +157,38 @@ resource "aws_lb_listener_rule" "lb_rule" {
 
       }
     }
-    condition {
+  }
+  dynamic "condition" {
+    for_each = try(each.value.conditions, [])
+    content {
       dynamic "host_header" {
-        for_each = try(each.value.conditions.host_header, [])
+        for_each = try(each.value.host_header, [])
         content {
           values = host_header.value.values
         }
       }
       dynamic "http_header" {
-        for_each = try(each.value.conditions.http_header, [])
+        for_each = try(each.value.http_header, [])
         content {
           http_header_name = http_header.value.http_header_name
           values           = http_header.value.values
         }
       }
       dynamic "path_pattern" {
-        for_each = try(each.value.conditions.path_pattern, [])
+        for_each = try(each.value.path_pattern, [])
         content {
           values = path_pattern.value.values
         }
       }
       dynamic "query_string" {
-        for_each = try(each.value.conditions.query_strings, [])
+        for_each = try(each.value.query_strings, [])
         content {
           key   = query_string.value.key
           value = query_string.value.values
         }
       }
       dynamic "source_ip" {
-        for_each = try(each.value.conditions.source_ip, [])
+        for_each = try(each.value.source_ip, [])
         content {
           values = source_ip.value.values
         }
