@@ -9,10 +9,10 @@ output "target_groups" {
     for tg in aws_lb_target_group.this : tg.name => {
       name               = tg.name
       arn                = tg.arn
-      load_balancer_arns = tg.load_balancer_arns
       port               = tg.port
       protocol           = tg.protocol
       target_type        = tg.target_type
+      load_balancer_arns = tg.load_balancer_arns
     }
   }
 }
