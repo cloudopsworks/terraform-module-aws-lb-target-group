@@ -66,19 +66,23 @@ resource "aws_lb_target_group" "this" {
 resource "aws_lb_target_group_attachment" "this" {
   for_each = merge([
     for k, v in var.target_groups : {
-      for target_id in try(v.target_ids, []) : "${k}-${target_id}" => {
-        target_group_arn = aws_lb_target_group.this[k].arn
-        target_id        = target_id
+      for target in try(v.targets, []) : "${k}-${target.target_id}" => {
+        target_group_arn  = aws_lb_target_group.this[k].arn
+        target_id         = target.target_id
+        availability_zone = try(target.availability_zone, null)
+        port              = try(target.port, null)
       }
     }
   ]...)
-  target_group_arn = each.value.target_group_arn
-  target_id        = each.value.target_id
+  target_group_arn  = each.value.target_group_arn
+  target_id         = each.value.target_id
+  availability_zone = each.value.availability_zone
+  port              = each.value.port
 }
 
 # Listener rule specific for ALB
 resource "aws_lb_listener_rule" "lb_rule" {
-  depends_on = [aws_lb_target_group.this]
+  depends_on   = [aws_lb_target_group.this]
   for_each     = var.listener_rules
   listener_arn = each.value.listener_arn
   priority     = try(each.value.priority, 100)
