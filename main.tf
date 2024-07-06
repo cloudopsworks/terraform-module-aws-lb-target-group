@@ -84,10 +84,10 @@ resource "aws_lb_listener_rule" "lb_rule" {
   dynamic "action" {
     for_each = try(each.value.actions, [])
     content {
-      type             = each.value.type
-      target_group_arn = each.value.tg_ref != "" ? aws_lb_target_group.this[each.value.tg_ref].arn : null
+      type             = action.value.type
+      target_group_arn = action.value.tg_ref != "" ? aws_lb_target_group.this[action.value.tg_ref].arn : null
       dynamic "authenticate_cognito" {
-        for_each = try(each.value.authenticate_cognito, [])
+        for_each = try(action.value.authenticate_cognito, [])
         content {
           authentication_request_extra_params = authenticate_cognito.value.authentication_request_extra_params
           on_unauthenticated_request          = authenticate_cognito.value.on_unauthenticated_request
@@ -101,7 +101,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
 
       }
       dynamic "authenticate_oidc" {
-        for_each = try(each.value.authenticate_oidc, [])
+        for_each = try(action.value.authenticate_oidc, [])
         content {
           authentication_request_extra_params = authenticate_oidc.value.authentication_request_extra_params
           authorization_endpoint              = authenticate_oidc.value.authorization_endpoint
@@ -117,7 +117,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
         }
       }
       dynamic "fixed_response" {
-        for_each = try(each.value.fixed_response, [])
+        for_each = try(action.value.fixed_response, [])
         content {
           content_type = fixed_response.value.content_type
           message_body = fixed_response.value.message_body
@@ -125,7 +125,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
         }
       }
       dynamic "forward" {
-        for_each = try(each.value.forward, [])
+        for_each = try(action.value.forward, [])
         content {
           dynamic "target_group" {
             for_each = try(forward.value.target_group, [])
@@ -145,7 +145,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
         }
       }
       dynamic "redirect" {
-        for_each = try(each.value.redirect, [])
+        for_each = try(action.value.redirect, [])
         content {
           host        = try(redirect.value.host, "#{host}")
           path        = try(redirect.value.path, "#{path}")
@@ -159,36 +159,36 @@ resource "aws_lb_listener_rule" "lb_rule" {
     }
   }
   dynamic "condition" {
-    for_each = try(each.value.conditions, [])
+    for_each = try(condition.value.conditions, [])
     content {
       dynamic "host_header" {
-        for_each = try(each.value.host_header, [])
+        for_each = try(condition.value.host_header, [])
         content {
           values = host_header.value.values
         }
       }
       dynamic "http_header" {
-        for_each = try(each.value.http_header, [])
+        for_each = try(condition.value.http_header, [])
         content {
           http_header_name = http_header.value.http_header_name
           values           = http_header.value.values
         }
       }
       dynamic "path_pattern" {
-        for_each = try(each.value.path_pattern, [])
+        for_each = try(condition.value.path_pattern, [])
         content {
           values = path_pattern.value.values
         }
       }
       dynamic "query_string" {
-        for_each = try(each.value.query_strings, [])
+        for_each = try(condition.value.query_strings, [])
         content {
           key   = query_string.value.key
           value = query_string.value.values
         }
       }
       dynamic "source_ip" {
-        for_each = try(each.value.source_ip, [])
+        for_each = try(condition.value.source_ip, [])
         content {
           values = source_ip.value.values
         }
