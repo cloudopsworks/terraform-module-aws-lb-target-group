@@ -7,9 +7,12 @@
 output "target_groups" {
   value = {
     for tg in aws_lb_target_group.this : tg.name => {
-      id                 = tg.id
+      name               = tg.name
       arn                = tg.arn
       load_balancer_arns = tg.load_balancer_arns
+      port               = tg.port
+      protocol           = tg.protocol
+      target_type        = tg.target_type
     }
   }
 }
