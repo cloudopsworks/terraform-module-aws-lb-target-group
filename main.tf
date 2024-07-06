@@ -159,7 +159,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
     }
   }
   dynamic "condition" {
-    for_each = try(condition.value.conditions, [])
+    for_each = try(each.value.conditions, [])
     content {
       dynamic "host_header" {
         for_each = try(condition.value.host_header, [])
