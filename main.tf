@@ -126,8 +126,21 @@ resource "aws_lb_listener_rule" "lb_rule" {
     dynamic "forward" {
       for_each = try(each.value.actions.forward, [])
       content {
-        stickiness       = try(forward.value.stickiness, null)
-        target_group_arn = forward.value.target_group_arn
+        dynamic "target_group" {
+          for_each = try(forward.value.target_group, [])
+          content {
+            arn    = target_group.value.arn
+            weight = target_group.value.arn
+          }
+        }
+        dynamic "stickiness" {
+          for_each = try(forward.value.stickiness, [])
+          content {
+            enabled  = stickiness.value.enabled
+            duration = stickness.value.duration
+          }
+
+        }
       }
     }
     dynamic "redirect" {
@@ -164,10 +177,10 @@ resource "aws_lb_listener_rule" "lb_rule" {
       }
     }
     dynamic "query_string" {
-      for_each = try(each.value.conditions.query_string, [])
+      for_each = try(each.value.conditions.query_strings, [])
       content {
-        key    = query_string.value.key
-        values = query_string.value.values
+        key   = query_string.value.key
+        value = query_string.value.values
       }
     }
     dynamic "source_ip" {
