@@ -12,7 +12,7 @@ resource "aws_lb_target_group" "this" {
   port                               = try(each.value.port, 80)
   preserve_client_ip                 = try(each.value.preserve_client_ip, null)
   protocol                           = try(each.value.protocol, "HTTP")
-  protocol_version                   = try(each.value.protocol_version, "HTTP1")
+  protocol_version                   = try(each.value.protocol_version, null)
   proxy_protocol_v2                  = try(each.value.proxy_protocol_v2, false)
   vpc_id                             = try(each.value.vpc_id, null)
   connection_termination             = try(each.value.connection_termination, false)
