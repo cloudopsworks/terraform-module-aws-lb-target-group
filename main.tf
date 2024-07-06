@@ -78,6 +78,7 @@ resource "aws_lb_target_group_attachment" "this" {
 
 # Listener rule specific for ALB
 resource "aws_lb_listener_rule" "lb_rule" {
+  depends_on = [aws_lb_target_group.this]
   for_each     = var.listener_rules
   listener_arn = each.value.listener_arn
   priority     = try(each.value.priority, 100)
