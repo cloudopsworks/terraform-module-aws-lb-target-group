@@ -81,111 +81,114 @@ resource "aws_lb_listener_rule" "lb_rule" {
   for_each     = var.listener_rules
   listener_arn = each.value.listener_arn
   priority     = try(each.value.priority, 100)
-  action {
-    type             = each.value.actions.type
-    target_group_arn = each.value.tg_ref != "" ? aws_lb_target_group.this[each.value.tg_ref].arn : null
-    dynamic "authenticate_cognito" {
-      for_each = try(each.value.actions.authenticate_cognito, [])
-      content {
-        authentication_request_extra_params = authenticate_cognito.value.authentication_request_extra_params
-        on_unauthenticated_request          = authenticate_cognito.value.on_unauthenticated_request
-        scope                               = authenticate_cognito.value.scope
-        session_cookie_name                 = authenticate_cognito.value.session_cookie_name
-        session_timeout                     = authenticate_cognito.value.session_timeout
-        user_pool_arn                       = authenticate_cognito.value.user_pool_arn
-        user_pool_client_id                 = authenticate_cognito.value.user_pool_client_id
-        user_pool_domain                    = authenticate_cognito.value.user_pool_domain
-      }
-
-    }
-    dynamic "authenticate_oidc" {
-      for_each = try(each.value.actions.authenticate_oidc, [])
-      content {
-        authentication_request_extra_params = authenticate_oidc.value.authentication_request_extra_params
-        authorization_endpoint              = authenticate_oidc.value.authorization_endpoint
-        client_id                           = authenticate_oidc.value.client_id
-        client_secret                       = authenticate_oidc.value.client_secret
-        issuer                              = authenticate_oidc.value.issuer
-        on_unauthenticated_request          = authenticate_oidc.value.on_unauthenticated_request
-        scope                               = authenticate_oidc.value.scope
-        session_cookie_name                 = authenticate_oidc.value.session_cookie_name
-        session_timeout                     = authenticate_oidc.value.session_timeout
-        token_endpoint                      = authenticate_oidc.value.token_endpoint
-        user_info_endpoint                  = authenticate_oidc.value.user_info_endpoint
-      }
-    }
-    dynamic "fixed_response" {
-      for_each = try(each.value.actions.fixed_response, [])
-      content {
-        content_type = fixed_response.value.content_type
-        message_body = fixed_response.value.message_body
-        status_code  = fixed_response.value.status_code
-      }
-    }
-    dynamic "forward" {
-      for_each = try(each.value.actions.forward, [])
-      content {
-        dynamic "target_group" {
-          for_each = try(forward.value.target_group, [])
-          content {
-            arn    = target_group.value.arn
-            weight = target_group.value.arn
-          }
+  dynamic "action" {
+    for_each = try(each.value.actions, [])
+    content {
+      type             = each.value.type
+      target_group_arn = each.value.tg_ref != "" ? aws_lb_target_group.this[each.value.tg_ref].arn : null
+      dynamic "authenticate_cognito" {
+        for_each = try(each.value.authenticate_cognito, [])
+        content {
+          authentication_request_extra_params = authenticate_cognito.value.authentication_request_extra_params
+          on_unauthenticated_request          = authenticate_cognito.value.on_unauthenticated_request
+          scope                               = authenticate_cognito.value.scope
+          session_cookie_name                 = authenticate_cognito.value.session_cookie_name
+          session_timeout                     = authenticate_cognito.value.session_timeout
+          user_pool_arn                       = authenticate_cognito.value.user_pool_arn
+          user_pool_client_id                 = authenticate_cognito.value.user_pool_client_id
+          user_pool_domain                    = authenticate_cognito.value.user_pool_domain
         }
-        dynamic "stickiness" {
-          for_each = try(forward.value.stickiness, [])
-          content {
-            enabled  = stickiness.value.enabled
-            duration = stickness.value.duration
-          }
 
+      }
+      dynamic "authenticate_oidc" {
+        for_each = try(each.value.authenticate_oidc, [])
+        content {
+          authentication_request_extra_params = authenticate_oidc.value.authentication_request_extra_params
+          authorization_endpoint              = authenticate_oidc.value.authorization_endpoint
+          client_id                           = authenticate_oidc.value.client_id
+          client_secret                       = authenticate_oidc.value.client_secret
+          issuer                              = authenticate_oidc.value.issuer
+          on_unauthenticated_request          = authenticate_oidc.value.on_unauthenticated_request
+          scope                               = authenticate_oidc.value.scope
+          session_cookie_name                 = authenticate_oidc.value.session_cookie_name
+          session_timeout                     = authenticate_oidc.value.session_timeout
+          token_endpoint                      = authenticate_oidc.value.token_endpoint
+          user_info_endpoint                  = authenticate_oidc.value.user_info_endpoint
         }
       }
-    }
-    dynamic "redirect" {
-      for_each = try(each.value.actions.redirect, [])
-      content {
-        host        = try(redirect.value.host, "#{host}")
-        path        = try(redirect.value.path, "#{path}")
-        port        = try(redirect.value.port, "#{port}")
-        protocol    = try(redirect.value.protocol, "#{protocol}")
-        query       = try(redirect.value.query, "#{query}")
-        status_code = try(redirect.value.status_code, "HTTP_302")
+      dynamic "fixed_response" {
+        for_each = try(each.value.fixed_response, [])
+        content {
+          content_type = fixed_response.value.content_type
+          message_body = fixed_response.value.message_body
+          status_code  = fixed_response.value.status_code
+        }
       }
+      dynamic "forward" {
+        for_each = try(each.value.forward, [])
+        content {
+          dynamic "target_group" {
+            for_each = try(forward.value.target_group, [])
+            content {
+              arn    = target_group.value.arn
+              weight = target_group.value.arn
+            }
+          }
+          dynamic "stickiness" {
+            for_each = try(forward.value.stickiness, [])
+            content {
+              enabled  = stickiness.value.enabled
+              duration = stickness.value.duration
+            }
 
-    }
-  }
-  condition {
-    dynamic "host_header" {
-      for_each = try(each.value.conditions.host_header, [])
-      content {
-        values = host_header.value.values
+          }
+        }
+      }
+      dynamic "redirect" {
+        for_each = try(each.value.redirect, [])
+        content {
+          host        = try(redirect.value.host, "#{host}")
+          path        = try(redirect.value.path, "#{path}")
+          port        = try(redirect.value.port, "#{port}")
+          protocol    = try(redirect.value.protocol, "#{protocol}")
+          query       = try(redirect.value.query, "#{query}")
+          status_code = try(redirect.value.status_code, "HTTP_302")
+        }
+
       }
     }
-    dynamic "http_header" {
-      for_each = try(each.value.conditions.http_header, [])
-      content {
-        http_header_name = http_header.value.http_header_name
-        values           = http_header.value.values
+    condition {
+      dynamic "host_header" {
+        for_each = try(each.value.conditions.host_header, [])
+        content {
+          values = host_header.value.values
+        }
       }
-    }
-    dynamic "path_pattern" {
-      for_each = try(each.value.conditions.path_pattern, [])
-      content {
-        values = path_pattern.value.values
+      dynamic "http_header" {
+        for_each = try(each.value.conditions.http_header, [])
+        content {
+          http_header_name = http_header.value.http_header_name
+          values           = http_header.value.values
+        }
       }
-    }
-    dynamic "query_string" {
-      for_each = try(each.value.conditions.query_strings, [])
-      content {
-        key   = query_string.value.key
-        value = query_string.value.values
+      dynamic "path_pattern" {
+        for_each = try(each.value.conditions.path_pattern, [])
+        content {
+          values = path_pattern.value.values
+        }
       }
-    }
-    dynamic "source_ip" {
-      for_each = try(each.value.conditions.source_ip, [])
-      content {
-        values = source_ip.value.values
+      dynamic "query_string" {
+        for_each = try(each.value.conditions.query_strings, [])
+        content {
+          key   = query_string.value.key
+          value = query_string.value.values
+        }
+      }
+      dynamic "source_ip" {
+        for_each = try(each.value.conditions.source_ip, [])
+        content {
+          values = source_ip.value.values
+        }
       }
     }
   }
