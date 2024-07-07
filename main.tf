@@ -40,7 +40,7 @@ resource "aws_lb_target_group" "this" {
     path                = try(each.value.health_check.path, "/")
     port                = try(each.value.health_check.port, "traffic-port")
     protocol            = try(each.value.health_check.protocol, null)
-    timeout             = try(each.value.health_check.timeout, 30)
+    timeout             = try(each.value.health_check.timeout, null)
     unhealthy_threshold = try(each.value.health_check.unhealthy_threshold, 3)
   }
   dynamic "target_failover" {
