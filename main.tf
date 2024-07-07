@@ -201,5 +201,10 @@ resource "aws_lb_listener_rule" "lb_rule" {
     }
   }
 
-  tags = local.all_tags
+  tags = merge(
+    {
+      Name = try(each.value.name, format("%s/%s", each.key, local.system_name))
+    },
+    local.all_tags
+  )
 }
