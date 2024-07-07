@@ -34,14 +34,14 @@ resource "aws_lb_target_group" "this" {
   }
   health_check {
     enabled             = try(each.value.health_check.enabled, false)
-    healthy_threshold   = try(each.value.health_check.healthy_threshold, 3)
+    healthy_threshold   = try(each.value.health_check.healthy_threshold, null)
     interval            = try(each.value.health_check.interval, 30)
     matcher             = try(each.value.health_check.matcher, null)
     path                = try(each.value.health_check.path, "/")
     port                = try(each.value.health_check.port, "traffic-port")
     protocol            = try(each.value.health_check.protocol, null)
     timeout             = try(each.value.health_check.timeout, null)
-    unhealthy_threshold = try(each.value.health_check.unhealthy_threshold, 3)
+    unhealthy_threshold = try(each.value.health_check.unhealthy_threshold, null)
   }
   dynamic "target_failover" {
     for_each = try(each.value.target_failover, [])
