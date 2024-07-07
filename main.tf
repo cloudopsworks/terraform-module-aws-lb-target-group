@@ -59,6 +59,10 @@ resource "aws_lb_target_group" "this" {
       enable_unhealthy_connection_termination = try(target_health_state.value.enable_unhealthy_connection_termination, true)
     }
   }
+  lifecycle {
+    # this will work well only if rule when recreated has diffent name
+    create_before_destroy = true
+  }
   tags = local.all_tags
 }
 
