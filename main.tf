@@ -32,19 +32,16 @@ resource "aws_lb_target_group" "this" {
       cookie_name     = try(stickiness.value.cookie_name, null)
     }
   }
-  dynamic "health_check" {
-    for_each = try(each.value.health_check, [])
-    content {
-      enabled             = try(health_check.value.enabled, false)
-      healthy_threshold   = try(health_check.value.healthy_threshold, 3)
-      interval            = try(health_check.value.interval, 30)
-      matcher             = try(health_check.value.matcher, null)
-      path                = try(health_check.value.path, "/")
-      port                = try(health_check.value.port, "traffic-port")
-      protocol            = try(health_check.value.protocol, null)
-      timeout             = try(health_check.value.timeout, 30)
-      unhealthy_threshold = try(health_check.value.unhealthy_threshold, 3)
-    }
+  health_check {
+    enabled             = try(health_check.value.enabled, false)
+    healthy_threshold   = try(health_check.value.healthy_threshold, 3)
+    interval            = try(health_check.value.interval, 30)
+    matcher             = try(health_check.value.matcher, null)
+    path                = try(health_check.value.path, "/")
+    port                = try(health_check.value.port, "traffic-port")
+    protocol            = try(health_check.value.protocol, null)
+    timeout             = try(health_check.value.timeout, 30)
+    unhealthy_threshold = try(health_check.value.unhealthy_threshold, 3)
   }
   dynamic "target_failover" {
     for_each = try(each.value.target_failover, [])
