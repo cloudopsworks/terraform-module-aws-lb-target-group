@@ -81,11 +81,20 @@ resource "aws_lb_target_group_attachment" "this" {
   port              = each.value.port
 }
 
+data "aws_lb_listener" "listener" {
+  for_each = {
+    for id, rule in var.listener_rules : id => rule
+    if try(rule.listener_port, "") != ""
+  }
+  load_balancer_arn = var.lb_arn
+  port              = each.value.listener_port
+}
+
 # Listener rule specific for ALB
 resource "aws_lb_listener_rule" "lb_rule" {
   depends_on   = [aws_lb_target_group.this]
   for_each     = var.listener_rules
-  listener_arn = each.value.listener_arn
+  listener_arn = try(each.value.listener_port, "") != "" ? data.aws_lb_listener.listener[each.key].arn : each.value.listener_arn
   priority     = try(each.value.priority, 100)
   dynamic "action" {
     for_each = try(each.value.actions, [])

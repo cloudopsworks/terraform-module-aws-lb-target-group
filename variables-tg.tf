@@ -4,6 +4,12 @@
 #            Distributed Under Apache v2.0 License
 #
 
+variable "lb_arn" {
+  description = "The load balancer ARN"
+  type        = string
+  default     = ""
+}
+
 variable "target_groups" {
   description = "The target groups to create"
   type        = any
