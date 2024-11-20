@@ -24,7 +24,7 @@ resource "aws_lb_target_group" "this" {
   load_balancing_cross_zone_enabled  = try(each.value.load_balancing_cross_zone_enabled, false)
   lambda_multi_value_headers_enabled = try(each.value.lambda_multi_value_headers_enabled, null)
   dynamic "stickiness" {
-    for_each = length(try(each.value.stickness, {})) > 0 ? [each.value.stickiness] : []
+    for_each = length(try(each.value.stickiness, {})) > 0 ? [each.value.stickiness] : []
     content {
       enabled         = try(stickiness.value.enabled, false)
       type            = try(stickiness.value.type, "lb_cookie")
