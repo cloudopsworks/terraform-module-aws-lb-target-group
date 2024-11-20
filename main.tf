@@ -24,7 +24,7 @@ resource "aws_lb_target_group" "this" {
   load_balancing_cross_zone_enabled  = try(each.value.load_balancing_cross_zone_enabled, false)
   lambda_multi_value_headers_enabled = try(each.value.lambda_multi_value_headers_enabled, null)
   dynamic "stickiness" {
-    for_each = try(each.value.stickness, [])
+    for_each = length(try(each.value.stickness, {})) > 0 ? [each.value.stickiness] : []
     content {
       enabled         = try(stickiness.value.enabled, false)
       type            = try(stickiness.value.type, "lb_cookie")
@@ -44,14 +44,14 @@ resource "aws_lb_target_group" "this" {
     unhealthy_threshold = try(each.value.health_check.unhealthy_threshold, null)
   }
   dynamic "target_failover" {
-    for_each = try(each.value.target_failover, [])
+    for_each = length(try(each.value.target_failover, {})) > 0 ? [each.value.target_failover] : []
     content {
       on_deregistration = try(target_failover.value.on_deregistration, "no_rebalance")
       on_unhealthy      = try(target_failover.value.on_failure, "no_rebalance")
     }
   }
   dynamic "target_health_state" {
-    for_each = try(each.value.target_health_state, [])
+    for_each = length(try(each.value.target_health_state, {})) > 0 ? [each.value.target_health_state] : []
     content {
       enable_unhealthy_connection_termination = try(target_health_state.value.enable_unhealthy_connection_termination, true)
     }
