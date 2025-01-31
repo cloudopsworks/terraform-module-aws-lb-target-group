@@ -241,7 +241,7 @@ resource "aws_lambda_permission" "lambda" {
     } if try(v.target_type, "instance") == "lambda"
   ]...)
   action              = "lambda:InvokeFunction"
-  principal           = "apigateway.amazonaws.com"
+  principal           = "elasticloadbalancing.amazonaws.com"
   source_arn          = each.value.target_group_arn
   function_name       = startswith(each.value.target_id, "arn:aws:lambda") ? each.value.target_id : data.aws_lambda_function.lambda[each.key].arn
   statement_id_prefix = "${each.key}-"
