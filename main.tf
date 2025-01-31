@@ -9,7 +9,7 @@ resource "aws_lb_target_group" "this" {
   for_each                           = var.target_groups
   name                               = format("%s-%s", each.key, local.system_name_short)
   target_type                        = try(each.value.target_type, "instance")
-  port                               = try(each.value.port, 80)
+  port                               = try(each.value.port, null)
   preserve_client_ip                 = try(each.value.preserve_client_ip, null)
   protocol                           = try(each.value.protocol, "HTTP")
   protocol_version                   = try(each.value.protocol_version, null)
