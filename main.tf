@@ -218,3 +218,31 @@ resource "aws_lb_listener_rule" "lb_rule" {
     local.all_tags
   )
 }
+
+data "aws_lambda_function" "lambda" {
+  for_each = merge([
+    for k, v in var.target_groups : {
+      for target in try(v.targets, []) : "${k}-${target.target_id}" => {
+        target_group_arn = aws_lb_target_group.this[k].arn
+        target_id        = target.target_id
+      } if !startswith(target.target_id, "arn:aws:lambda")
+    } if try(v.target_type, "instance") == "lambda"
+  ]...)
+  function_name = each.value.target_id
+}
+
+resource "aws_lambda_permission" "lambda" {
+  for_each = merge([
+    for k, v in var.target_groups : {
+      for target in try(v.targets, []) : "${k}-${target.target_id}" => {
+        target_group_arn = aws_lb_target_group.this[k].arn
+        target_id        = target.target_id
+      }
+    } if try(v.target_type, "instance") == "lambda"
+  ]...)
+  action              = "lambda:InvokeFunction"
+  principal           = "apigateway.amazonaws.com"
+  source_arn          = aws_lb_target_group.this[each.key].arn
+  function_name       = startswith(each.value.target_id, "arn:aws:lambda") ? each.value.target_id : data.aws_lambda_function.lambda[each.key].arn
+  statement_id_prefix = "${each.key}-"
+}
