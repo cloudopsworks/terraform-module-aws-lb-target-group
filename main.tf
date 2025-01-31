@@ -242,7 +242,7 @@ resource "aws_lambda_permission" "lambda" {
   ]...)
   action              = "lambda:InvokeFunction"
   principal           = "apigateway.amazonaws.com"
-  source_arn          = aws_lb_target_group.this[each.key].arn
+  source_arn          = each.value.target_group_arn
   function_name       = startswith(each.value.target_id, "arn:aws:lambda") ? each.value.target_id : data.aws_lambda_function.lambda[each.key].arn
   statement_id_prefix = "${each.key}-"
 }
