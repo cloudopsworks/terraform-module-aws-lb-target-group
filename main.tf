@@ -101,7 +101,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
     for_each = try(each.value.actions, [])
     content {
       type             = action.value.type
-      target_group_arn = action.value.tg_ref != "" ? aws_lb_target_group.this[action.value.tg_ref].arn : null
+      target_group_arn = try(action.value.tg_ref, "") != "" ? aws_lb_target_group.this[action.value.tg_ref].arn : null
       dynamic "authenticate_cognito" {
         for_each = try(action.value.authenticate_cognito, [])
         content {
