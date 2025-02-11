@@ -161,7 +161,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
         }
       }
       dynamic "redirect" {
-        for_each = lenght(try(action.value.redirect, {})) > 0 ? [action.value.redirect] : []
+        for_each = length(try(action.value.redirect, {})) > 0 ? [action.value.redirect] : []
         content {
           host        = try(redirect.value.host, "#{host}")
           path        = try(redirect.value.path, "#{path}")
