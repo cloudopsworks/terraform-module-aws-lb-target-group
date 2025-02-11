@@ -164,7 +164,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
         for_each = length(try(action.value.redirect, {})) > 0 ? [action.value.redirect] : []
         content {
           host        = try(redirect.value.host, "#{host}")
-          path        = try(redirect.value.path, "#{path}")
+          path        = try(redirect.value.path, "/#{path}")
           port        = try(redirect.value.port, "#{port}")
           protocol    = try(redirect.value.protocol, "#{protocol}")
           query       = try(redirect.value.query, "#{query}")
