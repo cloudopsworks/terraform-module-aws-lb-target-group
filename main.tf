@@ -103,7 +103,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
       type             = action.value.type
       target_group_arn = try(action.value.tg_ref, "") != "" ? aws_lb_target_group.this[action.value.tg_ref].arn : null
       dynamic "authenticate_cognito" {
-        for_each = try(action.value.authenticate_cognito, [])
+        for_each = length(try(action.value.authenticate_cognito, {})) > 0 ? [action.value.authenticate_cognito] : []
         content {
           authentication_request_extra_params = authenticate_cognito.value.authentication_request_extra_params
           on_unauthenticated_request          = authenticate_cognito.value.on_unauthenticated_request
@@ -117,7 +117,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
 
       }
       dynamic "authenticate_oidc" {
-        for_each = try(action.value.authenticate_oidc, [])
+        for_each = length(try(action.value.authenticate_oidc, {})) > 0 ? [action.value.authenticate_oidc] : []
         content {
           authentication_request_extra_params = authenticate_oidc.value.authentication_request_extra_params
           authorization_endpoint              = authenticate_oidc.value.authorization_endpoint
@@ -133,7 +133,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
         }
       }
       dynamic "fixed_response" {
-        for_each = try(action.value.fixed_response, [])
+        for_each = length(try(action.value.fixed_response, {})) > 0 ? [action.value.fixed_response] : []
         content {
           content_type = fixed_response.value.content_type
           message_body = fixed_response.value.message_body
@@ -141,7 +141,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
         }
       }
       dynamic "forward" {
-        for_each = try(action.value.forward, [])
+        for_each = length(try(action.value.forward, [])) > 0 ? [action.value.forward] : []
         content {
           dynamic "target_group" {
             for_each = try(forward.value.target_group, [])
@@ -161,7 +161,7 @@ resource "aws_lb_listener_rule" "lb_rule" {
         }
       }
       dynamic "redirect" {
-        for_each = try(action.value.redirect, [])
+        for_each = lenght(try(action.value.redirect, {})) > 0 ? [action.value.redirect] : []
         content {
           host        = try(redirect.value.host, "#{host}")
           path        = try(redirect.value.path, "#{path}")
