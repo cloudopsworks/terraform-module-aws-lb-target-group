@@ -79,10 +79,10 @@ resource "aws_lb_target_group_attachment" "this" {
       }
     }
   ]...)
-  target_group_arn  = each.value.target_group_arn
-  target_id         = each.value.target_type == "lambda" ? (
+  target_group_arn = each.value.target_group_arn
+  target_id = each.value.target_type == "lambda" ? (
     startswith(each.value.target_id, "arn:aws:lambda") ? each.value.target_id : data.aws_lambda_function.lambda[each.key].arn
-  ) : (
+    ) : (
     each.value.target_type == "asg" ? data.aws_autoscaling_group.asg[each.key].arn : each.value.target_id
   )
   availability_zone = each.value.availability_zone
