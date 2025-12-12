@@ -11,7 +11,7 @@
 resource "aws_lb_target_group" "this" {
   for_each                           = var.target_groups
   name                               = format("%s-%s", each.key, local.system_name_short)
-  target_type                        = try(each.value.target_type, "instance")
+  target_type                        = try(each.value.target_type, "instance") == "asg" ? "instance" : each.value.target_type
   port                               = try(each.value.port, null)
   preserve_client_ip                 = try(each.value.preserve_client_ip, null)
   protocol                           = try(each.value.protocol, "HTTP")
@@ -72,7 +72,7 @@ resource "aws_autoscaling_traffic_source_attachment" "this" {
       for target in try(v.targets, []) : "${k}-${target.target_id}" => {
         target_group_arn = aws_lb_target_group.this[k].arn
         target_id        = target.target_id
-      } if try(target.target_type, "") == "asg"
+      } if try(v.target_type, "") == "asg"
     }
   ]...)
   autoscaling_group_name = data.aws_autoscaling_group.asg[each.key].name
@@ -92,7 +92,7 @@ resource "aws_lb_target_group_attachment" "this" {
         target_id         = target.target_id
         availability_zone = try(target.availability_zone, null)
         port              = try(target.port, null)
-      } if try(target.target_type, "") != "asg"
+      } if try(v.target_type, "") != "asg"
     }
   ]...)
   target_group_arn = each.value.target_group_arn
