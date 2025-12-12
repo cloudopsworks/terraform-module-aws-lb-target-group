@@ -11,7 +11,7 @@
 resource "aws_lb_target_group" "this" {
   for_each                           = var.target_groups
   name                               = format("%s-%s", each.key, local.system_name_short)
-  target_type                        = try(each.value.target_type, "instance")
+  target_type                        = try(each.value.target_type, "instance") == "asg" ? "instance" : each.value.target_type
   port                               = try(each.value.port, null)
   preserve_client_ip                 = try(each.value.preserve_client_ip, null)
   protocol                           = try(each.value.protocol, "HTTP")
@@ -66,6 +66,22 @@ resource "aws_lb_target_group" "this" {
   tags = local.all_tags
 }
 
+resource "aws_autoscaling_traffic_source_attachment" "this" {
+  for_each = merge([
+    for k, v in var.target_groups : {
+      for target in try(v.targets, []) : "${k}-${target.target_id}" => {
+        target_group_arn = aws_lb_target_group.this[k].arn
+        target_id        = target.target_id
+      } if try(v.target_type, "") == "asg"
+    }
+  ]...)
+  autoscaling_group_name = data.aws_autoscaling_group.asg[each.key].name
+  traffic_source {
+    identifier = each.value.target_group_arn
+    type       = "elbv2"
+  }
+}
+
 # Target group attachment - with target IDs
 resource "aws_lb_target_group_attachment" "this" {
   for_each = merge([
@@ -76,15 +92,13 @@ resource "aws_lb_target_group_attachment" "this" {
         target_id         = target.target_id
         availability_zone = try(target.availability_zone, null)
         port              = try(target.port, null)
-      }
+      } if try(v.target_type, "") != "asg"
     }
   ]...)
   target_group_arn = each.value.target_group_arn
   target_id = each.value.target_type == "lambda" ? (
     startswith(each.value.target_id, "arn:aws:lambda") ? each.value.target_id : data.aws_lambda_function.lambda[each.key].arn
-    ) : (
-    each.value.target_type == "asg" ? data.aws_autoscaling_group.asg[each.key].arn : each.value.target_id
-  )
+  ) : each.value.target_id
   availability_zone = each.value.availability_zone
   port              = each.value.port
 }
