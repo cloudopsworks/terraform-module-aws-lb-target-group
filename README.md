@@ -10,10 +10,16 @@
 
 [![cloudopsworks][logo]](https://cloudops.works/)
 
-# Terraform Transit Gateway Module
+# Terraform AWS LB Target Group Module
 
 
-VPC Module for setting up transit gateway with ResourceAccessMananger support.
+
+
+Terraform module to manage AWS Load Balancer Target Groups, attachments, and
+Listener Rules. Supports ALB/NLB Target Groups for instance, IP, Lambda, and
+Auto Scaling Group targets; advanced health checks and stickiness; and
+listener rules with forward, redirect, fixed-response, and OIDC/Cognito
+authentication actions. Designed to work seamlessly with Terragrunt.
 
 
 ---
@@ -46,10 +52,383 @@ We have [*lots of terraform modules*][terraform_modules] that are Open Source an
 
 
 
+## Introduction
+
+This module creates and manages AWS Load Balancer Target Groups and related
+resources:
+
+- Target Groups (`aws_lb_target_group`) with optional stickiness,
+  connection/termination tuning, protocol settings, and health checks.
+- Target Group Attachments (`aws_lb_target_group_attachment`) for instances,
+  IPs, Lambda functions, or Auto Scaling Groups.
+- Listener Rules (`aws_lb_listener_rule`) that can forward to module-created
+  target groups via a reference, or to arbitrary target group ARNs. Rules can
+  include host/path/header/query conditions and support forward, redirect,
+  fixed-response, OIDC, and Cognito actions.
+
+Naming and tagging follow organizational conventions using the `org` object
+and `spoke_def`. Tags merge organization-wide common tags and any
+`extra_tags` you pass. This module is suitable for both ALB and NLB, provided
+you choose compatible protocols and fields.
+
+## Usage
 
 
+**IMPORTANT:** The `master` branch is used in `source` just as an example. In your code, do not pin to `master` because there may be breaking changes between releases.
+Instead pin to the release tag (e.g. `?ref=vX.Y.Z`) of one of our [latest releases](https://github.com/cloudopsworks/terraform-module-aws-lb-target-group/releases).
 
 
+Terragrunt usage
+-----------------
+
+Place a `terragrunt.hcl` in your environment/live folder and point `source`
+to this module. Provide inputs as shown below. You can pin a version using
+`?ref=vX.Y.Z`.
+
+```hcl
+terraform {
+  source = "git::https://github.com/cloudopsworks/terraform-module-aws-lb-target-group.git//?ref=v1.0.0"
+}
+
+inputs = {
+  org = {
+    organization_name = "acme"
+    organization_unit = "platform"
+    environment_type  = "prod"
+    environment_name  = "main"
+  }
+
+  # Load Balancer ARN is needed when you prefer selecting a listener by port
+  # using `listener_port` in `listener_rules`.
+  lb_arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/acme/abc123"
+
+  # Map of Target Groups to create. Keys become the base TG name prefix.
+  target_groups = {
+    api = {
+      target_type   = "instance"              # instance | ip | lambda | asg
+      port          = 8080                     # omit for lambda
+      protocol      = "HTTP"                   # HTTP | HTTPS | TCP | UDP | TCP_UDP | TLS
+      vpc_id        = "vpc-0abc123def456"
+      slow_start    = 0
+      deregistration_delay = 60
+      stickiness = {
+        enabled         = true
+        type            = "lb_cookie"         # lb_cookie | app_cookie
+        cookie_duration = 86400
+      }
+      health_check = {
+        enabled   = true
+        protocol  = "HTTP"
+        path      = "/health"
+        interval  = 30
+        timeout   = 5
+        matcher   = "200-399"
+      }
+      # Attach EC2 instances (or IPs). For ASG use target_type = "asg".
+      targets = [
+        { target_id = "i-0123abcd4567efgh8", port = 8080 },
+        { target_id = "i-0f98ba76dc54ed321", port = 8080 }
+      ]
+    }
+
+    lambda_tg = {
+      target_type = "lambda"
+      # When target_type = lambda, each target_id can be a function name or ARN
+      targets = [
+        { target_id = "my-lambda-func" }
+      ]
+    }
+  }
+
+  # Optional: ALB/NLB listener rules. You can select a listener by port
+  # (requires lb_arn) or provide a listener_arn directly per rule.
+  listener_rules = {
+    api-by-path = {
+      listener_port = 80
+      priority      = 100
+      actions = [
+        { type = "forward", tg_ref = "api" }  # forwards to target group created above
+      ]
+      conditions = [
+        { path_pattern = [{ values = ["/api/*"] }] }
+      ]
+    }
+
+    oidc-auth = {
+      listener_port = 443
+      priority      = 50
+      actions = [
+        {
+          type = "authenticate-oidc"
+          authenticate_oidc = {
+            authorization_endpoint     = "https://issuer.example.com/oauth2/authorize"
+            token_endpoint             = "https://issuer.example.com/oauth2/token"
+            user_info_endpoint         = "https://issuer.example.com/oauth2/userinfo"
+            issuer                     = "https://issuer.example.com"
+            client_id                  = "client-id"
+            client_secret              = "s3cr3t"
+            scope                      = "openid profile email"
+            on_unauthenticated_request = "authenticate"
+            session_cookie_name        = "oidc"
+            session_timeout            = 3600
+          }
+        },
+        { type = "forward", tg_ref = "api" }
+      ]
+      conditions = [
+        { host_header = [{ values = ["app.example.com"] }] }
+      ]
+    }
+  }
+
+  extra_tags = {
+    Owner = "platform-team"
+  }
+}
+```
+
+Inputs (YAML schema)
+--------------------
+
+The following YAML describes the expected `inputs` (Terragrunt) / variables (Terraform) and how the module uses them.
+
+```yaml
+# Top-level variables
+org:                          # Used to build standardized names, tags, and secret paths
+  organization_name: string
+  organization_unit: string   # e.g., platform, networking
+  environment_type: string    # e.g., prod, stage, dev
+  environment_name: string    # e.g., main, blue, team1
+
+is_hub: bool                  # Default: false (reserved for naming/topology switches)
+spoke_def: string             # Default: "001"; appended to generated names
+extra_tags:                   # Default: {}; merged with common tags into all resources
+  <string>: <string>
+
+lb_arn: string                # Default: ""; required when using listener_rules with listener_port
+
+target_groups:                # Map of TG definitions; key becomes TG name prefix
+  <tg_key>:
+    target_type: string       # instance | ip | lambda | asg (default in code: instance)
+    port: int|null            # Required for non-lambda
+    protocol: string          # Default: HTTP (ALB/NLB-supported values)
+    protocol_version: string|null
+    preserve_client_ip: bool|null
+    proxy_protocol_v2: bool   # Default: false (NLB)
+    vpc_id: string|null       # Required for instance/ip/asg target types
+    connection_termination: bool         # Default: false
+    deregistration_delay: int            # Default: 300
+    slow_start: int                      # Default: 0
+    ip_address_type: string              # Default: ipv4
+    load_balancing_algorithm_type: string # Default: round_robin
+    load_balancing_anomaly_mitigation: string|null
+    load_balancing_cross_zone_enabled: bool # Default: false
+    lambda_multi_value_headers_enabled: bool|null
+
+    stickiness:               # Optional; creates the `stickiness` block
+      enabled: bool           # Default: false
+      type: string            # lb_cookie | app_cookie
+      cookie_duration: int    # Default: 86400
+      cookie_name: string|null
+
+    health_check:             # Optional; creates the `health_check` block
+      enabled: bool           # Default: false
+      healthy_threshold: int|null
+      interval: int           # Default: 30
+      matcher: string|null
+      path: string            # Default: "/"
+      port: string|int        # Default: "traffic-port"
+      protocol: string|null
+      timeout: int|null
+      unhealthy_threshold: int|null
+
+    target_failover:          # Optional; NLB failover behavior
+      on_deregistration: string  # Default: no_rebalance
+      on_unhealthy: string       # Default: no_rebalance
+
+    target_health_state:      # Optional
+      enable_unhealthy_connection_termination: bool # Default: true
+
+    targets:                  # Optional list of attachments
+      - target_id: string     # EC2 instance ID, IP, ASG name, or Lambda name/ARN
+        availability_zone: string|null
+        port: int|null
+
+listener_rules:               # Optional map; creates aws_lb_listener_rule resources
+  <rule_key>:
+    # Choose exactly one: listener_port or listener_arn
+    listener_port: int        # Lookup listener via lb_arn + port
+    listener_arn: string      # Direct listener ARN
+    priority: int             # Default: 100
+    actions:
+      - type: string          # forward | redirect | fixed-response | authenticate-oidc | authenticate-cognito
+        tg_ref: string        # When type=forward, reference a key in target_groups
+        fixed_response:       # When type=fixed-response
+          content_type: string
+          message_body: string
+          status_code: string
+        redirect:             # When type=redirect
+          host: string        # Supports ALB interpolation tokens like #{host}
+          path: string        # e.g., /#{path}
+          port: string        # e.g., #{port}
+          protocol: string    # e.g., #{protocol}
+          query: string       # e.g., #{query}
+          status_code: string # e.g., HTTP_302
+        authenticate_oidc:    # When type=authenticate-oidc
+          authorization_endpoint: string
+          token_endpoint: string
+          user_info_endpoint: string
+          issuer: string
+          client_id: string
+          client_secret: string
+          scope: string
+          on_unauthenticated_request: string
+          session_cookie_name: string
+          session_timeout: int
+        authenticate_cognito: # When type=authenticate-cognito
+          user_pool_arn: string
+          user_pool_client_id: string
+          user_pool_domain: string
+          scope: string
+          on_unauthenticated_request: string
+          session_cookie_name: string
+          session_timeout: int
+
+    conditions:
+      - host_header:
+          - values: ["app.example.com"]
+      - path_pattern:
+          - values: ["/api/*"]
+      - http_header:
+          - http_header_name: "X-Header"
+            values: ["abc"]
+      - query_string:
+          - key: "k"
+            value: "v"
+      - source_ip:
+          - values: ["10.0.0.0/8"]
+```
+
+## Quick Start
+
+1. Ensure you have Terragrunt and Terraform installed, and your AWS provider
+   credentials configured (via parent `terragrunt.hcl`, environment, or
+   shared credentials file).
+2. Create a new folder for your environment (e.g., `live/prod/lb-tg`).
+3. Add a `terragrunt.hcl` using one of the examples above.
+4. Run:
+
+   ```bash
+   terragrunt init
+   terragrunt plan
+   terragrunt apply
+   ```
+
+5. Outputs include created Target Groups, Attachments, and Listener Rules.
+
+
+## Examples
+
+Example 1: ALB with instance targets and path-based routing
+-----------------------------------------------------------
+
+```hcl
+terraform {
+  source = "git::https://github.com/cloudopsworks/terraform-module-aws-lb-target-group.git//?ref=v1.0.0"
+}
+
+inputs = {
+  org = {
+    organization_name = "acme"
+    organization_unit = "platform"
+    environment_type  = "prod"
+    environment_name  = "main"
+  }
+
+  lb_arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/acme/abc123"
+
+  target_groups = {
+    web = {
+      target_type = "instance"
+      vpc_id      = "vpc-0abc123def456"
+      port        = 80
+      protocol    = "HTTP"
+      health_check = {
+        enabled  = true
+        path     = "/health"
+        matcher  = "200-399"
+        interval = 30
+      }
+      targets = [
+        { target_id = "i-01aaa", port = 80 },
+        { target_id = "i-02bbb", port = 80 }
+      ]
+    }
+  }
+
+  listener_rules = {
+    web-root = {
+      listener_port = 80
+      priority      = 100
+      actions       = [{ type = "forward", tg_ref = "web" }]
+      conditions    = [{ path_pattern = [{ values = ["/"] }] }]
+    }
+  }
+}
+```
+
+Example 2: Lambda target, host rule, and OIDC auth
+--------------------------------------------------
+
+```hcl
+terraform {
+  source = "git::https://github.com/cloudopsworks/terraform-module-aws-lb-target-group.git//?ref=v1.0.0"
+}
+
+inputs = {
+  org = {
+    organization_name = "acme"
+    organization_unit = "payments"
+    environment_type  = "stage"
+    environment_name  = "blue"
+  }
+
+  lb_arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/acme/abc123"
+
+  target_groups = {
+    auth = {
+      target_type = "lambda"
+      targets     = [{ target_id = "auth-dispatcher" }]
+    }
+  }
+
+  listener_rules = {
+    auth-host = {
+      listener_port = 443
+      priority      = 10
+      actions = [
+        {
+          type = "authenticate-oidc"
+          authenticate_oidc = {
+            authorization_endpoint     = "https://issuer.example.com/oauth2/authorize"
+            token_endpoint             = "https://issuer.example.com/oauth2/token"
+            user_info_endpoint         = "https://issuer.example.com/oauth2/userinfo"
+            issuer                     = "https://issuer.example.com"
+            client_id                  = "client-id"
+            client_secret              = "s3cr3t"
+            scope                      = "openid email"
+            on_unauthenticated_request = "authenticate"
+          }
+        },
+        { type = "forward", tg_ref = "auth" }
+      ]
+      conditions = [
+        { host_header = [{ values = ["auth.example.com"] }] }
+      ]
+    }
+  }
+}
+```
 
 
 
@@ -78,7 +457,7 @@ Available targets:
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.26.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.4 |
 
 ## Modules
 
@@ -90,6 +469,7 @@ Available targets:
 
 | Name | Type |
 |------|------|
+| [aws_autoscaling_traffic_source_attachment.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/autoscaling_traffic_source_attachment) | resource |
 | [aws_lambda_permission.lambda](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
 | [aws_lb_listener_rule.lb_rule](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lb_listener_rule) | resource |
 | [aws_lb_target_group.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lb_target_group) | resource |
@@ -125,7 +505,7 @@ Available targets:
 
 **Got a question?** We got answers. 
 
-File a GitHub [issue](https://github.com/cloudopsworks/terraform-module-aws-vpc-setup/issues), send us an [email][email] or join our [Slack Community][slack].
+File a GitHub [issue](https://github.com/cloudopsworks/terraform-module-aws-lb-target-group/issues), send us an [email][email] or join our [Slack Community][slack].
 
 [![README Commercial Support][readme_commercial_support_img]][readme_commercial_support_link]
 
@@ -142,7 +522,7 @@ File a GitHub [issue](https://github.com/cloudopsworks/terraform-module-aws-vpc-
 
 ### Bug Reports & Feature Requests
 
-Please use the [issue tracker](https://github.com/cloudopsworks/terraform-module-aws-vpc-setup/issues) to report any bugs or file feature requests.
+Please use the [issue tracker](https://github.com/cloudopsworks/terraform-module-aws-lb-target-group/issues) to report any bugs or file feature requests.
 
 ### Developing
 
@@ -151,7 +531,7 @@ Please use the [issue tracker](https://github.com/cloudopsworks/terraform-module
 
 ## Copyrights
 
-Copyright © 2024-2025 [Cloud Ops Works LLC](https://cloudops.works)
+Copyright © 2024-2026 [Cloud Ops Works LLC](https://cloudops.works)
 
 
 
@@ -209,31 +589,31 @@ This project is maintained by [Cloud Ops Works LLC][website].
 [![Beacon][beacon]][website]
 
   [logo]: https://cloudops.works/logo-300x69.svg
-  [docs]: https://cowk.io/docs?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=docs
-  [website]: https://cowk.io/homepage?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=website
-  [github]: https://cowk.io/github?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=github
-  [jobs]: https://cowk.io/jobs?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=jobs
-  [hire]: https://cowk.io/hire?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=hire
-  [slack]: https://cowk.io/slack?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=slack
-  [linkedin]: https://cowk.io/linkedin?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=linkedin
-  [twitter]: https://cowk.io/twitter?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=twitter
-  [testimonial]: https://cowk.io/leave-testimonial?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=testimonial
-  [office_hours]: https://cloudops.works/office-hours?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=office_hours
-  [newsletter]: https://cowk.io/newsletter?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=newsletter
-  [email]: https://cowk.io/email?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=email
-  [commercial_support]: https://cowk.io/commercial-support?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=commercial_support
-  [we_love_open_source]: https://cowk.io/we-love-open-source?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=we_love_open_source
-  [terraform_modules]: https://cowk.io/terraform-modules?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=terraform_modules
+  [docs]: https://cowk.io/docs?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=docs
+  [website]: https://cowk.io/homepage?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=website
+  [github]: https://cowk.io/github?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=github
+  [jobs]: https://cowk.io/jobs?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=jobs
+  [hire]: https://cowk.io/hire?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=hire
+  [slack]: https://cowk.io/slack?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=slack
+  [linkedin]: https://cowk.io/linkedin?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=linkedin
+  [twitter]: https://cowk.io/twitter?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=twitter
+  [testimonial]: https://cowk.io/leave-testimonial?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=testimonial
+  [office_hours]: https://cloudops.works/office-hours?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=office_hours
+  [newsletter]: https://cowk.io/newsletter?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=newsletter
+  [email]: https://cowk.io/email?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=email
+  [commercial_support]: https://cowk.io/commercial-support?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=commercial_support
+  [we_love_open_source]: https://cowk.io/we-love-open-source?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=we_love_open_source
+  [terraform_modules]: https://cowk.io/terraform-modules?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=terraform_modules
   [readme_header_img]: https://cloudops.works/readme/header/img
-  [readme_header_link]: https://cloudops.works/readme/header/link?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=readme_header_link
+  [readme_header_link]: https://cloudops.works/readme/header/link?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=readme_header_link
   [readme_footer_img]: https://cloudops.works/readme/footer/img
-  [readme_footer_link]: https://cloudops.works/readme/footer/link?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=readme_footer_link
+  [readme_footer_link]: https://cloudops.works/readme/footer/link?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=readme_footer_link
   [readme_commercial_support_img]: https://cloudops.works/readme/commercial-support/img
-  [readme_commercial_support_link]: https://cloudops.works/readme/commercial-support/link?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-vpc-setup&utm_content=readme_commercial_support_link
-  [share_twitter]: https://twitter.com/intent/tweet/?text=Terraform+Transit+Gateway+Module&url=https://github.com/cloudopsworks/terraform-module-aws-vpc-setup
-  [share_linkedin]: https://www.linkedin.com/shareArticle?mini=true&title=Terraform+Transit+Gateway+Module&url=https://github.com/cloudopsworks/terraform-module-aws-vpc-setup
-  [share_reddit]: https://reddit.com/submit/?url=https://github.com/cloudopsworks/terraform-module-aws-vpc-setup
-  [share_facebook]: https://facebook.com/sharer/sharer.php?u=https://github.com/cloudopsworks/terraform-module-aws-vpc-setup
-  [share_googleplus]: https://plus.google.com/share?url=https://github.com/cloudopsworks/terraform-module-aws-vpc-setup
-  [share_email]: mailto:?subject=Terraform+Transit+Gateway+Module&body=https://github.com/cloudopsworks/terraform-module-aws-vpc-setup
-  [beacon]: https://ga-beacon.cloudops.works/G-7XWMFVFXZT/cloudopsworks/terraform-module-aws-vpc-setup?pixel&cs=github&cm=readme&an=terraform-module-aws-vpc-setup
+  [readme_commercial_support_link]: https://cloudops.works/readme/commercial-support/link?utm_source=github&utm_medium=readme&utm_campaign=cloudopsworks/terraform-module-aws-lb-target-group&utm_content=readme_commercial_support_link
+  [share_twitter]: https://twitter.com/intent/tweet/?text=Terraform+AWS+LB+Target+Group+Module&url=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
+  [share_linkedin]: https://www.linkedin.com/shareArticle?mini=true&title=Terraform+AWS+LB+Target+Group+Module&url=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
+  [share_reddit]: https://reddit.com/submit/?url=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
+  [share_facebook]: https://facebook.com/sharer/sharer.php?u=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
+  [share_googleplus]: https://plus.google.com/share?url=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
+  [share_email]: mailto:?subject=Terraform+AWS+LB+Target+Group+Module&body=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
+  [beacon]: https://ga-beacon.cloudops.works/G-7XWMFVFXZT/cloudopsworks/terraform-module-aws-lb-target-group?pixel&cs=github&cm=readme&an=terraform-module-aws-lb-target-group
