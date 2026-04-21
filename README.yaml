@@ -3,6 +3,13 @@ name: Terraform AWS LB Target Group Module
 
 license: "APACHE2"
 
+badges:
+  - name: Latest Release
+    image: https://img.shields.io/github/release/cloudopsworks/terraform-module-aws-lb-target-group.svg?style=for-the-badge
+    url: https://github.com/cloudopsworks/terraform-module-aws-lb-target-group/releases/latest
+  - name: Last Updated
+    image: https://img.shields.io/github/last-commit/cloudopsworks/terraform-module-aws-lb-target-group.svg?style=for-the-badge
+    url: https://github.com/cloudopsworks/terraform-module-aws-lb-target-group/commits
 
 copyrights:
   - name: "Cloud Ops Works LLC"
@@ -39,235 +46,146 @@ introduction: |-
 
 # How to use this project
 usage: |-
-  Terragrunt usage
-  -----------------
+  Terragrunt Scaffolding
+  ----------------------
 
-  Place a `terragrunt.hcl` in your environment/live folder and point `source`
-  to this module. Provide inputs as shown below. You can pin a version using
-  `?ref=vX.Y.Z`.
+  The recommended way to bootstrap a new deployment is via the Terragrunt scaffold
+  command, which generates `terragrunt.hcl`, `inputs.yaml`, and `local-tags.json`
+  from this module's boilerplate.
+
+  ```sh
+  # 1. Create and enter the target deployment directory
+  mkdir -p <environment>/<region>/<spoke>/lb-target-group
+  cd <environment>/<region>/<spoke>/lb-target-group
+
+  # 2. Scaffold the module (generates terragrunt.hcl, inputs.yaml, local-tags.json)
+  terragrunt scaffold github.com/cloudopsworks/terraform-module-aws-lb-target-group
+
+  # 3. Edit inputs.yaml with deployment-specific values
+  vi inputs.yaml
+
+  # 4. Apply
+  terragrunt apply
+  ```
+
+  Generated `inputs.yaml`
+  -----------------------
+
+  After scaffolding, edit `inputs.yaml`. All module-specific variables are
+  pre-populated with comments. Variables supplied automatically by the Terragrunt
+  hierarchy (`org`, `is_hub`, `spoke_def`, `extra_tags`) are not included here.
+
+  ```yaml
+  # Module configuration
+
+  # lb_arn: "" # (Optional) The ARN of the load balancer. Required when listener_rules use
+  #            # listener_port to look up a listener by port. When alb_enabled=true in
+  #            # boilerplate.yml this is automatically sourced from the ALB dependency output.
+  #            # Default: ""
+  lb_arn: ""
+
+  # target_groups: # (Optional) Map of target group definitions to create.
+  #                # Keys become the base name prefix for each target group.
+  #                # Default: {}
+  #
+  # target_groups:
+  #   api:
+  #     target_type: "instance"  # instance | ip | lambda | asg
+  #     port: 8080
+  #     protocol: "HTTP"         # HTTP | HTTPS | TCP | UDP | TCP_UDP | TLS. Default: HTTP
+  #     vpc_id: "vpc-0abc123"
+  #     deregistration_delay: 300
+  #     slow_start: 0
+  #     ip_address_type: "ipv4"
+  #     load_balancing_algorithm_type: "round_robin"
+  #     stickiness:
+  #       enabled: false
+  #       type: "lb_cookie"      # lb_cookie | app_cookie
+  #       cookie_duration: 86400
+  #     health_check:
+  #       enabled: true
+  #       path: "/health"
+  #       interval: 30
+  #       matcher: "200-399"
+  #     targets:
+  #       - target_id: "i-0abc123"
+  #         port: 8080
+  target_groups: {}
+
+  # listener_rules: # (Optional) Map of listener rule definitions.
+  #                 # Default: {}
+  #
+  # listener_rules:
+  #   my-rule:
+  #     listener_port: 80        # Mutually exclusive with listener_arn
+  #     priority: 100
+  #     actions:
+  #       - type: "forward"      # forward | redirect | fixed-response | authenticate-oidc | authenticate-cognito
+  #         tg_ref: "api"        # Reference a key in target_groups for forward actions
+  #     conditions:
+  #       - path_pattern:
+  #           - values: ["/api/*"]
+  listener_rules: {}
+  ```
+
+  Generated `terragrunt.hcl`
+  --------------------------
+
+  Scaffold produces the following `terragrunt.hcl`. When `alb_enabled=true` (default),
+  the ALB dependency block is included and `lb_arn` is wired to the ALB output automatically.
 
   ```hcl
+  locals {
+    local_vars  = yamldecode(file("./inputs.yaml"))
+    spoke_vars  = yamldecode(file(find_in_parent_folders("spoke-inputs.yaml")))
+    region_vars = yamldecode(file(find_in_parent_folders("region-inputs.yaml")))
+    env_vars    = yamldecode(file(find_in_parent_folders("env-inputs.yaml")))
+    global_vars = yamldecode(file(find_in_parent_folders("global-inputs.yaml")))
+
+    local_tags  = jsondecode(file("./local-tags.json"))
+    spoke_tags  = jsondecode(file(find_in_parent_folders("spoke-tags.json")))
+    region_tags = jsondecode(file(find_in_parent_folders("region-tags.json")))
+    env_tags    = jsondecode(file(find_in_parent_folders("env-tags.json")))
+    global_tags = jsondecode(file(find_in_parent_folders("global-tags.json")))
+
+    tags = merge(
+      local.global_tags,
+      local.env_tags,
+      local.region_tags,
+      local.spoke_tags,
+      local.local_tags
+    )
+  }
+
+  include "root" {
+    path = find_in_parent_folders("root.hcl")
+  }
+
+  # Included when alb_enabled = true (default)
+  dependency "alb" {
+    config_path = "../alb"
+    mock_outputs_allowed_terraform_commands = ["validate", "destroy"]
+    mock_outputs = {
+      load_balancer_arn      = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/alb-1234567890123456/1234567890123456"
+      load_balancer_dns_name = "alb-1234567890123456.us-east-1.elb.amazonaws.com"
+      load_balancer_zone_id  = "Z1234567890123456"
+    }
+  }
+
   terraform {
-    source = "git::https://github.com/cloudopsworks/terraform-module-aws-lb-target-group.git//?ref=v1.0.0"
+    source = "github.com/cloudopsworks/terraform-module-aws-lb-target-group"
   }
 
   inputs = {
-    org = {
-      organization_name = "acme"
-      organization_unit = "platform"
-      environment_type  = "prod"
-      environment_name  = "main"
-    }
-
-    # Load Balancer ARN is needed when you prefer selecting a listener by port
-    # using `listener_port` in `listener_rules`.
-    lb_arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/acme/abc123"
-
-    # Map of Target Groups to create. Keys become the base TG name prefix.
-    target_groups = {
-      api = {
-        target_type   = "instance"              # instance | ip | lambda | asg
-        port          = 8080                     # omit for lambda
-        protocol      = "HTTP"                   # HTTP | HTTPS | TCP | UDP | TCP_UDP | TLS
-        vpc_id        = "vpc-0abc123def456"
-        slow_start    = 0
-        deregistration_delay = 60
-        stickiness = {
-          enabled         = true
-          type            = "lb_cookie"         # lb_cookie | app_cookie
-          cookie_duration = 86400
-        }
-        health_check = {
-          enabled   = true
-          protocol  = "HTTP"
-          path      = "/health"
-          interval  = 30
-          timeout   = 5
-          matcher   = "200-399"
-        }
-        # Attach EC2 instances (or IPs). For ASG use target_type = "asg".
-        targets = [
-          { target_id = "i-0123abcd4567efgh8", port = 8080 },
-          { target_id = "i-0f98ba76dc54ed321", port = 8080 }
-        ]
-      }
-
-      lambda_tg = {
-        target_type = "lambda"
-        # When target_type = lambda, each target_id can be a function name or ARN
-        targets = [
-          { target_id = "my-lambda-func" }
-        ]
-      }
-    }
-
-    # Optional: ALB/NLB listener rules. You can select a listener by port
-    # (requires lb_arn) or provide a listener_arn directly per rule.
-    listener_rules = {
-      api-by-path = {
-        listener_port = 80
-        priority      = 100
-        actions = [
-          { type = "forward", tg_ref = "api" }  # forwards to target group created above
-        ]
-        conditions = [
-          { path_pattern = [{ values = ["/api/*"] }] }
-        ]
-      }
-
-      oidc-auth = {
-        listener_port = 443
-        priority      = 50
-        actions = [
-          {
-            type = "authenticate-oidc"
-            authenticate_oidc = {
-              authorization_endpoint     = "https://issuer.example.com/oauth2/authorize"
-              token_endpoint             = "https://issuer.example.com/oauth2/token"
-              user_info_endpoint         = "https://issuer.example.com/oauth2/userinfo"
-              issuer                     = "https://issuer.example.com"
-              client_id                  = "client-id"
-              client_secret              = "s3cr3t"
-              scope                      = "openid profile email"
-              on_unauthenticated_request = "authenticate"
-              session_cookie_name        = "oidc"
-              session_timeout            = 3600
-            }
-          },
-          { type = "forward", tg_ref = "api" }
-        ]
-        conditions = [
-          { host_header = [{ values = ["app.example.com"] }] }
-        ]
-      }
-    }
-
-    extra_tags = {
-      Owner = "platform-team"
-    }
+    is_hub        = false
+    org           = local.env_vars.org
+    spoke_def     = local.spoke_vars.spoke
+    lb_arn        = dependency.alb.outputs.load_balancer_arn
+    target_groups = try(local.local_vars.target_groups, {})
+    listener_rules = try(local.local_vars.listener_rules, {})
+    cross_account = local.cross_account
+    extra_tags    = local.tags
   }
-  ```
-
-  Inputs (YAML schema)
-  --------------------
-
-  The following YAML describes the expected `inputs` (Terragrunt) / variables (Terraform) and how the module uses them.
-
-  ```yaml
-  # Top-level variables
-  org:                          # Used to build standardized names, tags, and secret paths
-    organization_name: string
-    organization_unit: string   # e.g., platform, networking
-    environment_type: string    # e.g., prod, stage, dev
-    environment_name: string    # e.g., main, blue, team1
-
-  is_hub: bool                  # Default: false (reserved for naming/topology switches)
-  spoke_def: string             # Default: "001"; appended to generated names
-  extra_tags:                   # Default: {}; merged with common tags into all resources
-    <string>: <string>
-
-  lb_arn: string                # Default: ""; required when using listener_rules with listener_port
-
-  target_groups:                # Map of TG definitions; key becomes TG name prefix
-    <tg_key>:
-      target_type: string       # instance | ip | lambda | asg (default in code: instance)
-      port: int|null            # Required for non-lambda
-      protocol: string          # Default: HTTP (ALB/NLB-supported values)
-      protocol_version: string|null
-      preserve_client_ip: bool|null
-      proxy_protocol_v2: bool   # Default: false (NLB)
-      vpc_id: string|null       # Required for instance/ip/asg target types
-      connection_termination: bool         # Default: false
-      deregistration_delay: int            # Default: 300
-      slow_start: int                      # Default: 0
-      ip_address_type: string              # Default: ipv4
-      load_balancing_algorithm_type: string # Default: round_robin
-      load_balancing_anomaly_mitigation: string|null
-      load_balancing_cross_zone_enabled: bool # Default: false
-      lambda_multi_value_headers_enabled: bool|null
-
-      stickiness:               # Optional; creates the `stickiness` block
-        enabled: bool           # Default: false
-        type: string            # lb_cookie | app_cookie
-        cookie_duration: int    # Default: 86400
-        cookie_name: string|null
-
-      health_check:             # Optional; creates the `health_check` block
-        enabled: bool           # Default: false
-        healthy_threshold: int|null
-        interval: int           # Default: 30
-        matcher: string|null
-        path: string            # Default: "/"
-        port: string|int        # Default: "traffic-port"
-        protocol: string|null
-        timeout: int|null
-        unhealthy_threshold: int|null
-
-      target_failover:          # Optional; NLB failover behavior
-        on_deregistration: string  # Default: no_rebalance
-        on_unhealthy: string       # Default: no_rebalance
-
-      target_health_state:      # Optional
-        enable_unhealthy_connection_termination: bool # Default: true
-
-      targets:                  # Optional list of attachments
-        - target_id: string     # EC2 instance ID, IP, ASG name, or Lambda name/ARN
-          availability_zone: string|null
-          port: int|null
-
-  listener_rules:               # Optional map; creates aws_lb_listener_rule resources
-    <rule_key>:
-      # Choose exactly one: listener_port or listener_arn
-      listener_port: int        # Lookup listener via lb_arn + port
-      listener_arn: string      # Direct listener ARN
-      priority: int             # Default: 100
-      actions:
-        - type: string          # forward | redirect | fixed-response | authenticate-oidc | authenticate-cognito
-          tg_ref: string        # When type=forward, reference a key in target_groups
-          fixed_response:       # When type=fixed-response
-            content_type: string
-            message_body: string
-            status_code: string
-          redirect:             # When type=redirect
-            host: string        # Supports ALB interpolation tokens like #{host}
-            path: string        # e.g., /#{path}
-            port: string        # e.g., #{port}
-            protocol: string    # e.g., #{protocol}
-            query: string       # e.g., #{query}
-            status_code: string # e.g., HTTP_302
-          authenticate_oidc:    # When type=authenticate-oidc
-            authorization_endpoint: string
-            token_endpoint: string
-            user_info_endpoint: string
-            issuer: string
-            client_id: string
-            client_secret: string
-            scope: string
-            on_unauthenticated_request: string
-            session_cookie_name: string
-            session_timeout: int
-          authenticate_cognito: # When type=authenticate-cognito
-            user_pool_arn: string
-            user_pool_client_id: string
-            user_pool_domain: string
-            scope: string
-            on_unauthenticated_request: string
-            session_cookie_name: string
-            session_timeout: int
-
-      conditions:
-        - host_header:
-            - values: ["app.example.com"]
-        - path_pattern:
-            - values: ["/api/*"]
-        - http_header:
-            - http_header_name: "X-Header"
-              values: ["abc"]
-        - query_string:
-            - key: "k"
-              value: "v"
-        - source_ip:
-            - values: ["10.0.0.0/8"]
   ```
 
 # Example usage
@@ -275,112 +193,96 @@ examples: |-
   Example 1: ALB with instance targets and path-based routing
   -----------------------------------------------------------
 
-  ```hcl
-  terraform {
-    source = "git::https://github.com/cloudopsworks/terraform-module-aws-lb-target-group.git//?ref=v1.0.0"
-  }
+  `inputs.yaml`:
 
-  inputs = {
-    org = {
-      organization_name = "acme"
-      organization_unit = "platform"
-      environment_type  = "prod"
-      environment_name  = "main"
-    }
+  ```yaml
+  target_groups:
+    web:
+      target_type: "instance"
+      vpc_id: "vpc-0abc123def456"
+      port: 80
+      protocol: "HTTP"
+      deregistration_delay: 60
+      health_check:
+        enabled: true
+        path: "/health"
+        matcher: "200-399"
+        interval: 30
+        timeout: 5
+      targets:
+        - target_id: "i-01aaa"
+          port: 80
+        - target_id: "i-02bbb"
+          port: 80
 
-    lb_arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/acme/abc123"
-
-    target_groups = {
-      web = {
-        target_type = "instance"
-        vpc_id      = "vpc-0abc123def456"
-        port        = 80
-        protocol    = "HTTP"
-        health_check = {
-          enabled  = true
-          path     = "/health"
-          matcher  = "200-399"
-          interval = 30
-        }
-        targets = [
-          { target_id = "i-01aaa", port = 80 },
-          { target_id = "i-02bbb", port = 80 }
-        ]
-      }
-    }
-
-    listener_rules = {
-      web-root = {
-        listener_port = 80
-        priority      = 100
-        actions       = [{ type = "forward", tg_ref = "web" }]
-        conditions    = [{ path_pattern = [{ values = ["/"] }] }]
-      }
-    }
-  }
+  listener_rules:
+    web-root:
+      listener_port: 80
+      priority: 100
+      actions:
+        - type: "forward"
+          tg_ref: "web"
+      conditions:
+        - path_pattern:
+            - values: ["/"]
   ```
 
-  Example 2: Lambda target, host rule, and OIDC auth
-  --------------------------------------------------
+  Example 2: Lambda target, host rule, and OIDC authentication
+  ------------------------------------------------------------
 
-  ```hcl
-  terraform {
-    source = "git::https://github.com/cloudopsworks/terraform-module-aws-lb-target-group.git//?ref=v1.0.0"
-  }
+  `inputs.yaml`:
 
-  inputs = {
-    org = {
-      organization_name = "acme"
-      organization_unit = "payments"
-      environment_type  = "stage"
-      environment_name  = "blue"
-    }
+  ```yaml
+  target_groups:
+    auth:
+      target_type: "lambda"
+      targets:
+        - target_id: "auth-dispatcher"
 
-    lb_arn = "arn:aws:elasticloadbalancing:us-east-1:111122223333:loadbalancer/app/acme/abc123"
-
-    target_groups = {
-      auth = {
-        target_type = "lambda"
-        targets     = [{ target_id = "auth-dispatcher" }]
-      }
-    }
-
-    listener_rules = {
-      auth-host = {
-        listener_port = 443
-        priority      = 10
-        actions = [
-          {
-            type = "authenticate-oidc"
-            authenticate_oidc = {
-              authorization_endpoint     = "https://issuer.example.com/oauth2/authorize"
-              token_endpoint             = "https://issuer.example.com/oauth2/token"
-              user_info_endpoint         = "https://issuer.example.com/oauth2/userinfo"
-              issuer                     = "https://issuer.example.com"
-              client_id                  = "client-id"
-              client_secret              = "s3cr3t"
-              scope                      = "openid email"
-              on_unauthenticated_request = "authenticate"
-            }
-          },
-          { type = "forward", tg_ref = "auth" }
-        ]
-        conditions = [
-          { host_header = [{ values = ["auth.example.com"] }] }
-        ]
-      }
-    }
-  }
+  listener_rules:
+    auth-host:
+      listener_port: 443
+      priority: 10
+      actions:
+        - type: "authenticate-oidc"
+          authenticate_oidc:
+            authorization_endpoint: "https://issuer.example.com/oauth2/authorize"
+            token_endpoint: "https://issuer.example.com/oauth2/token"
+            user_info_endpoint: "https://issuer.example.com/oauth2/userinfo"
+            issuer: "https://issuer.example.com"
+            client_id: "client-id"
+            client_secret: "s3cr3t"
+            scope: "openid email"
+            on_unauthenticated_request: "authenticate"
+            session_cookie_name: "oidc"
+            session_timeout: 3600
+        - type: "forward"
+          tg_ref: "auth"
+      conditions:
+        - host_header:
+            - values: ["auth.example.com"]
   ```
 
 # How to get started quickly
 quickstart: |-
-  1. Ensure you have Terragrunt and Terraform installed, and your AWS provider
-     credentials configured (via parent `terragrunt.hcl`, environment, or
-     shared credentials file).
-  2. Create a new folder for your environment (e.g., `live/prod/lb-tg`).
-  3. Add a `terragrunt.hcl` using one of the examples above.
-  4. Run:
+  1. Ensure Terragrunt and Terraform/OpenTofu are installed and AWS credentials
+     are configured (via parent `terragrunt.hcl`, environment variables, or
+     a shared credentials file).
+  2. Create and enter the target deployment directory:
+
+     ```bash
+     mkdir -p live/prod/us-east-1/spoke001/lb-target-group
+     cd live/prod/us-east-1/spoke001/lb-target-group
+     ```
+
+  3. Scaffold the module:
+
+     ```bash
+     terragrunt scaffold github.com/cloudopsworks/terraform-module-aws-lb-target-group
+     ```
+
+  4. Edit `inputs.yaml` with your target groups and listener rules.
+  5. Run:
 
      ```bash
      terragrunt init
@@ -388,7 +290,7 @@ quickstart: |-
      terragrunt apply
      ```
 
-  5. Outputs include created Target Groups, Attachments, and Listener Rules.
+  6. Outputs include `target_groups`, `target_group_attachments`, and `listener_rules`.
 
 include:
   - "docs/targets.md"
