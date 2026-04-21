@@ -1,18 +1,113 @@
 # Module configuration
-# Required variables
-{{- range .requiredVariables }}
-{{- if ne .Name "org"}}
-# Description {{ .Description }} , Type: {{ .Type }}
-{{ .Name }}: {{ .DefaultValuePlaceholder }}
-{{- end }}
 
-{{- end }}
-# Optional variables
-{{- range .optionalVariables }}
-{{- if ne .Name "is_hub" "spoke_def" "extra_args" }}
-# Description {{ .Description }} , Type: {{ .Type }}
-#{{ .Name }}: {{ .DefaultValue }}
-{{- end }}
+# lb_arn: "" # (Optional) The ARN of the load balancer. Required when listener_rules use
+#            # listener_port to look up a listener by port. When alb_enabled=true in
+#            # boilerplate.yml this is automatically sourced from the ALB dependency output.
+#            # Default: ""
+#            # Example: "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/my-alb/abc123"
+lb_arn: ""
 
-{{- end }}
+# target_groups: # (Optional) Map of target group definitions to create.
+#                # Keys become the base name prefix for each target group.
+#                # Default: {}
+#
+# target_groups:
+#   <tg_key>:
+#     target_type: "instance"  # (Required) Target type. One of: instance | ip | lambda | asg
+#     port: 8080               # (Optional) Port the targets receive traffic on. Omit for lambda.
+#     protocol: "HTTP"         # (Optional) Protocol: HTTP | HTTPS | TCP | UDP | TCP_UDP | TLS. Default: HTTP
+#     protocol_version: null   # (Optional) Protocol version: HTTP1 | HTTP2 | GRPC. Default: null
+#     preserve_client_ip: null # (Optional) Whether to preserve client IP addresses. Default: null
+#     proxy_protocol_v2: false # (Optional) Enable Proxy Protocol v2 (NLB only). Default: false
+#     vpc_id: "vpc-0abc123"   # (Optional) VPC ID. Required for instance, ip, and asg target types. Default: null
+#     connection_termination: false        # (Optional) Terminate connections on deregistration. Default: false
+#     deregistration_delay: 300            # (Optional) Seconds to wait before deregistering a target. Default: 300
+#     slow_start: 0                        # (Optional) Slow start duration in seconds (0-900). Default: 0
+#     ip_address_type: "ipv4"              # (Optional) IP address type: ipv4 | ipv6. Default: ipv4
+#     load_balancing_algorithm_type: "round_robin" # (Optional) round_robin | least_outstanding_requests | weighted_random. Default: round_robin
+#     load_balancing_anomaly_mitigation: null      # (Optional) Enable anomaly mitigation: on | off. Default: null
+#     load_balancing_cross_zone_enabled: false     # (Optional) Enable cross-zone load balancing. Default: false
+#     lambda_multi_value_headers_enabled: null     # (Optional) Enable multi-value headers for Lambda targets. Default: null
+#     stickiness:                          # (Optional) Sticky session configuration. Omit to disable.
+#       enabled: false                     # (Optional) Enable sticky sessions. Default: false
+#       type: "lb_cookie"                  # (Optional) Stickiness type: lb_cookie | app_cookie. Default: lb_cookie
+#       cookie_duration: 86400             # (Optional) Cookie TTL in seconds (1-604800). Default: 86400
+#       cookie_name: null                  # (Optional) Cookie name, required for app_cookie type. Default: null
+#     health_check:                        # (Optional) Health check configuration. Omit to use provider defaults.
+#       enabled: false                     # (Optional) Enable health checks. Default: false
+#       healthy_threshold: null            # (Optional) Consecutive successes before healthy. Default: null (provider default)
+#       interval: 30                       # (Optional) Seconds between health checks. Default: 30
+#       matcher: null                      # (Optional) HTTP status codes considered healthy. e.g. "200-399". Default: null
+#       path: "/"                          # (Optional) Health check request path. Default: /
+#       port: "traffic-port"               # (Optional) Port for health checks: traffic-port or a number. Default: traffic-port
+#       protocol: null                     # (Optional) Health check protocol. Default: null (inherits TG protocol)
+#       timeout: null                      # (Optional) Seconds before timeout. Default: null (provider default)
+#       unhealthy_threshold: null          # (Optional) Consecutive failures before unhealthy. Default: null
+#     target_failover:                     # (Optional) Target failover policy (NLB only). Omit to use defaults.
+#       on_deregistration: "no_rebalance"  # (Optional) no_rebalance | rebalance. Default: no_rebalance
+#       on_unhealthy: "no_rebalance"       # (Optional) no_rebalance | rebalance. Default: no_rebalance
+#     target_health_state:                 # (Optional) Unhealthy connection termination settings.
+#       enable_unhealthy_connection_termination: true # (Optional) Default: true
+#     targets:                             # (Optional) List of targets to register.
+#       - target_id: "i-0abc123"           # (Required) Instance ID, IP address, Lambda name/ARN, or ASG name
+#         availability_zone: null          # (Optional) AZ for IP-type targets. Default: null
+#         port: null                       # (Optional) Override port for this target. Default: null
+target_groups: {}
 
+# listener_rules: # (Optional) Map of listener rule definitions to create.
+#                 # Default: {}
+#
+# listener_rules:
+#   <rule_key>:
+#     listener_port: 80          # (Optional) Port to look up listener on lb_arn. Mutually exclusive with listener_arn.
+#     listener_arn: ""           # (Optional) Direct ARN of the listener. Mutually exclusive with listener_port.
+#     priority: 100              # (Optional) Rule evaluation priority (1-50000). Lower numbers evaluated first. Default: 100
+#     actions:                   # (Required) Ordered list of actions to perform when conditions match.
+#       - type: "forward"        # (Required) Action type: forward | redirect | fixed-response | authenticate-oidc | authenticate-cognito
+#         tg_ref: "api"          # (Optional) Key into target_groups for forward-type actions. Module creates TG ARN from this.
+#         fixed_response:        # (Optional) For type=fixed-response
+#           content_type: "text/plain" # (Required) MIME type: text/plain | text/css | text/html | application/javascript | application/json
+#           message_body: "Not Found"  # (Optional) Response body text.
+#           status_code: "404"         # (Required) HTTP status code.
+#         redirect:              # (Optional) For type=redirect. Supports ALB interpolation tokens: #{host}, #{path}, #{port}, #{protocol}, #{query}
+#           host: "#{host}"      # (Optional) Redirect hostname. Default: #{host}
+#           path: "/#{path}"     # (Optional) Redirect path. Default: /#{path}
+#           port: "#{port}"      # (Optional) Redirect port. Default: #{port}
+#           protocol: "#{protocol}" # (Optional) Redirect protocol: HTTP | HTTPS | #{protocol}. Default: #{protocol}
+#           query: "#{query}"    # (Optional) Redirect query string. Default: #{query}
+#           status_code: "HTTP_302" # (Required) HTTP_301 | HTTP_302
+#         authenticate_oidc:     # (Optional) For type=authenticate-oidc
+#           authorization_endpoint: "https://issuer.example.com/oauth2/authorize" # (Required)
+#           token_endpoint: "https://issuer.example.com/oauth2/token"             # (Required)
+#           user_info_endpoint: "https://issuer.example.com/oauth2/userinfo"      # (Required)
+#           issuer: "https://issuer.example.com"   # (Required) The OIDC issuer identifier.
+#           client_id: "client-id"                 # (Required) OAuth 2.0 client identifier.
+#           client_secret: "s3cr3t"                # (Required) OAuth 2.0 client secret.
+#           scope: "openid email"                  # (Optional) Space-separated list of OIDC scopes. Default: openid
+#           on_unauthenticated_request: "authenticate" # (Optional) authenticate | allow | deny. Default: authenticate
+#           session_cookie_name: "oidc"            # (Optional) Session cookie name. Default: AWSELBAuthSessionCookie
+#           session_timeout: 3600                  # (Optional) Session cookie expiry in seconds. Default: 604800
+#           authentication_request_extra_params: {} # (Optional) Extra query parameters for the authorization endpoint.
+#         authenticate_cognito:  # (Optional) For type=authenticate-cognito
+#           user_pool_arn: "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc" # (Required)
+#           user_pool_client_id: "client-id"       # (Required) Cognito User Pool Client ID.
+#           user_pool_domain: "my-domain"          # (Required) Cognito User Pool domain prefix or full domain.
+#           scope: "openid"                        # (Optional) Space-separated OIDC scopes. Default: openid
+#           on_unauthenticated_request: "authenticate" # (Optional) authenticate | allow | deny. Default: authenticate
+#           session_cookie_name: "cognito"         # (Optional) Session cookie name. Default: AWSELBAuthSessionCookie
+#           session_timeout: 3600                  # (Optional) Session cookie expiry in seconds. Default: 604800
+#           authentication_request_extra_params: {} # (Optional) Extra query parameters for the authorization endpoint.
+#     conditions:                # (Required) List of conditions; all must match for the rule to apply.
+#       - host_header:
+#           - values: ["app.example.com"]          # (Required) Host header values to match (wildcards supported).
+#       - path_pattern:
+#           - values: ["/api/*"]                   # (Required) Path pattern values to match (wildcards supported).
+#       - http_header:
+#           - http_header_name: "X-Custom-Header"  # (Required) HTTP header name.
+#             values: ["abc"]                      # (Required) Values to match.
+#       - query_string:
+#           - key: "version"                       # (Optional) Query string key.
+#             value: "v2"                          # (Required) Query string value to match.
+#       - source_ip:
+#           - values: ["10.0.0.0/8"]               # (Required) Source IP CIDR blocks to match.
+listener_rules: {}
