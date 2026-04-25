@@ -14,7 +14,9 @@ This document provides instructions for AI Agents working with the implementatio
  - Azure
  - MongoDB Atlas
  - Github
-
+- **Not a template when:** under the following conditions, the repository is not a template 
+  - The repository contains a `versions.tf` file at the root level, indicating that it has been initialized for a specific provider.
+  - The repository has a `.cloudopsworks/.provider` file indicating the current provider in use.
 
 ## Implementation Repository Guidelines
 
@@ -81,6 +83,7 @@ This document provides instructions for AI Agents working with the implementatio
 ## Versioning Management
 
 Module versioning follows GitHub Flow — a simplified branching model where feature branches are created from and merged back into `master`. Use `make` targets whenever available for branch and release operations.
+- There is a skill related to this template module and their implementations, it can be found in the [Claude Code Skills - cw-release](https://github.com/cloudopsworks/claude-code-skills/tree/main/cw-release) can be used in any agent anyway, install and use it.
 
 ### General Rules
 
