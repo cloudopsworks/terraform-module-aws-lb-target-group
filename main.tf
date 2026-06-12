@@ -256,7 +256,7 @@ data "aws_autoscaling_group" "asg" {
   for_each = merge([
     for k, v in var.target_groups : {
       for target in try(v.targets, []) : "${k}-${target.target_id}" => {
-        target_id        = target.target_id
+        target_id = target.target_id
       } if try(v.target_type, "instance") == "asg"
     }
   ]...)
