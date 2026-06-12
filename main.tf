@@ -1,5 +1,5 @@
 ##
-# (c) 2021-2025
+# (c) 2021-2026
 #     Cloud Ops Works LLC - https://cloudops.works/
 #     Find us on:
 #       GitHub: https://github.com/cloudopsworks
@@ -245,8 +245,7 @@ data "aws_lambda_function" "lambda" {
   for_each = merge([
     for k, v in var.target_groups : {
       for target in try(v.targets, []) : "${k}-${target.target_id}" => {
-        target_group_arn = aws_lb_target_group.this[k].arn
-        target_id        = target.target_id
+        target_id = target.target_id
       } if !startswith(target.target_id, "arn:aws:lambda")
     } if try(v.target_type, "instance") == "lambda"
   ]...)
@@ -257,8 +256,7 @@ data "aws_autoscaling_group" "asg" {
   for_each = merge([
     for k, v in var.target_groups : {
       for target in try(v.targets, []) : "${k}-${target.target_id}" => {
-        target_group_arn = aws_lb_target_group.this[k].arn
-        target_id        = target.target_id
+        target_id = target.target_id
       } if try(v.target_type, "instance") == "asg"
     }
   ]...)
