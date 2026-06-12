@@ -397,21 +397,19 @@ File a GitHub [issue](https://github.com/cloudopsworks/terraform-module-aws-lb-t
 
 
 ## DevOps Tools
-[]()
+[Our Products](https://cloudopsworks.co/products/)
+[CI/CD Blueprint](https://cloudopsworks.co/cicd-blueprint/)
+[Open Source](https://cloudopsworks.co/open-source/)
+
 ## Slack Community
 
 
 ## Newsletter
-
-## Office Hours
-
-## Contributing
+[Resources Directory](https://cloudopsworks.co/resources/)
 
 ### Bug Reports & Feature Requests
 
 Please use the [issue tracker](https://github.com/cloudopsworks/terraform-module-aws-lb-target-group/issues) to report any bugs or file feature requests.
-
-### Developing
 
 
 
@@ -502,4 +500,4 @@ This project is maintained by [Cloud Ops Works LLC][website].
   [share_reddit]: https://reddit.com/submit/?url=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
   [share_facebook]: https://facebook.com/sharer/sharer.php?u=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
   [share_email]: mailto:?subject=Terraform+AWS+LB+Target+Group+Module&body=https://github.com/cloudopsworks/terraform-module-aws-lb-target-group
-  [beacon]: https://ga-beacon.cloudospworks.co/G-QMZVYYN2VN/cloudopsworks/terraform-module-aws-lb-target-group?pixel&cs=github&cm=readme&an=terraform-module-aws-lb-target-group
+  [beacon]: https://ga-beacon.cloudopsworks.co/G-QMZVYYN2VN/cloudopsworks/terraform-module-aws-lb-target-group?pixel&cs=github&cm=readme&an=terraform-module-aws-lb-target-group
