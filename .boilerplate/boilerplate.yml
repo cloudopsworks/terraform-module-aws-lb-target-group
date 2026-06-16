@@ -14,22 +14,26 @@ variables:
     description: "Is this a hub configuration?"
     type: bool
     default: false
+    confirm: true
   - name: tags
     order: 1
     description: "Tags"
     type: map
     default: {}
+    confirm: true
   # End - Generic Boilerplate Variables Setup
   - name: alb_enabled
     order: 2
     description: "Enable ALB for this product? (default: true)"
     type: bool
     default: true
+    confirm: true
   - name: alb_path
     order: 3
     description: "ALB Path for this product (e.g. ../sandbox-alb-instance)"
     type: string
     default: "../alb"
+    confirm: true
 
 hooks:
   after:
