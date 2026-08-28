@@ -20,10 +20,12 @@ github_repo: cloudopsworks/terraform-module-aws-lb-target-group
 
 description: |-
   Terraform module to manage AWS Load Balancer Target Groups, attachments, and
-  Listener Rules. Supports ALB/NLB Target Groups for instance, IP, Lambda, and
-  Auto Scaling Group targets; advanced health checks and stickiness; and
-  listener rules with forward, redirect, fixed-response, and OIDC/Cognito
-  authentication actions. Designed to work seamlessly with Terragrunt.
+  Listener Rules. Supports ALB/NLB/GWLB Target Groups for instance, IP, Lambda,
+  ALB and Auto Scaling Group targets; advanced health checks, stickiness,
+  target group health requirements and target health state tuning; and listener
+  rules with forward, redirect, fixed-response, OIDC/Cognito authentication,
+  native JWT validation, regex conditions and URL/host header rewrites.
+  Designed to work seamlessly with Terragrunt.
 
 # Introduction to the project
 introduction: |-
@@ -31,18 +33,41 @@ introduction: |-
   resources:
 
   - Target Groups (`aws_lb_target_group`) with optional stickiness,
-    connection/termination tuning, protocol settings, and health checks.
+    connection/termination tuning, protocol settings, health checks, target
+    group health requirements (`target_group_health`), target health state
+    (`target_health_state`), target failover (`target_failover`) and target
+    control port.
   - Target Group Attachments (`aws_lb_target_group_attachment`) for instances,
-    IPs, Lambda functions, or Auto Scaling Groups.
+    IPs, Lambda functions, Application Load Balancers or Auto Scaling Groups.
+    Auto Scaling Group targets are wired through
+    `aws_autoscaling_traffic_source_attachment` instead of direct attachments.
   - Listener Rules (`aws_lb_listener_rule`) that can forward to module-created
     target groups via a reference, or to arbitrary target group ARNs. Rules can
-    include host/path/header/query conditions and support forward, redirect,
-    fixed-response, OIDC, and Cognito actions.
+    match on host header, path pattern, HTTP header, HTTP request method, query
+    string and source IP — with plain values or regular expressions — and
+    support forward (weighted, with stickiness), redirect, fixed-response,
+    OIDC, Cognito and JWT validation actions, plus URL and host header
+    rewrite transforms.
 
   Naming and tagging follow organizational conventions using the `org` object
   and `spoke_def`. Tags merge organization-wide common tags and any
-  `extra_tags` you pass. This module is suitable for both ALB and NLB, provided
-  you choose compatible protocols and fields.
+  `extra_tags` you pass. This module is suitable for ALB, NLB and GWLB,
+  provided you choose compatible protocols and fields.
+
+  ### Feature support matrix
+
+  | Area | Supported settings |
+  |------|--------------------|
+  | Target group core | `target_type`, `port`, `protocol`, `protocol_version`, `vpc_id`, `ip_address_type`, `target_control_port` |
+  | Deregistration & draining | `deregistration_delay`, `connection_termination`, `slow_start` |
+  | Load balancing | `load_balancing_algorithm_type`, `load_balancing_anomaly_mitigation`, `load_balancing_cross_zone_enabled` |
+  | Client behaviour | `preserve_client_ip`, `proxy_protocol_v2`, `lambda_multi_value_headers_enabled` |
+  | Health | `health_check`, `target_group_health.dns_failover`, `target_group_health.unhealthy_state_routing`, `target_health_state`, `target_failover` |
+  | Stickiness | `stickiness` (target group) and `actions[].forward.stickiness` (listener rule) |
+  | Targets | `targets[].target_id`, `availability_zone`, `port`, `quic_server_id` |
+  | Rule actions | `forward` (weighted, up to 5 target groups), `redirect`, `fixed-response`, `authenticate-oidc`, `authenticate-cognito`, `jwt_validation`, `order` |
+  | Rule conditions | `host_header`, `path_pattern`, `http_header` (each with `values` or `regex_values`), `http_request_method`, `query_string`, `source_ip` (with `ip_address_type`) |
+  | Rule transforms | `url-rewrite`, `host-header-rewrite` |
 
 # How to use this project
 usage: |-
@@ -82,51 +107,182 @@ usage: |-
   #            # listener_port to look up a listener by port. When alb_enabled=true in
   #            # boilerplate.yml this is automatically sourced from the ALB dependency output.
   #            # Default: ""
+  #            # Example: "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/my-alb/abc123"
   lb_arn: ""
 
   # target_groups: # (Optional) Map of target group definitions to create.
-  #                # Keys become the base name prefix for each target group.
+  #                # Keys become the base name prefix for each target group; the final name
+  #                # is "<key>-<system_name_short>".
   #                # Default: {}
   #
   # target_groups:
-  #   api:
-  #     target_type: "instance"  # instance | ip | lambda | asg
-  #     port: 8080
-  #     protocol: "HTTP"         # HTTP | HTTPS | TCP | UDP | TCP_UDP | TLS. Default: HTTP
-  #     vpc_id: "vpc-0abc123"
-  #     deregistration_delay: 300
-  #     slow_start: 0
-  #     ip_address_type: "ipv4"
-  #     load_balancing_algorithm_type: "round_robin"
-  #     stickiness:
-  #       enabled: false
-  #       type: "lb_cookie"      # lb_cookie | app_cookie
-  #       cookie_duration: 86400
-  #     health_check:
-  #       enabled: true
-  #       path: "/health"
-  #       interval: 30
-  #       matcher: "200-399"
-  #     targets:
-  #       - target_id: "i-0abc123"
-  #         port: 8080
+  #   <tg_key>:
+  #     target_type: "instance"  # (Optional) Target type. One of: instance | ip | lambda | alb | asg. Default: instance
+  #                              #            "asg" is a module-level alias: the target group is created with
+  #                              #            target_type "instance" and each target_id is attached as an
+  #                              #            Auto Scaling Group traffic source instead of a direct attachment.
+  #     port: 8080               # (Optional) Port on which targets receive traffic. Omit for lambda. Default: null
+  #     protocol: "HTTP"         # (Optional) One of: GENEVE | HTTP | HTTPS | TCP | TCP_UDP | TLS | UDP. Default: HTTP
+  #     protocol_version: null   # (Optional) One of: GRPC | HTTP1 | HTTP2. Default: null (provider default HTTP1)
+  #     preserve_client_ip: null # (Optional) Whether client IP preservation is enabled (NLB). Default: null
+  #     proxy_protocol_v2: false # (Optional) Enable Proxy Protocol v2 (NLB only). Default: false
+  #     vpc_id: "vpc-0abc123"    # (Optional) VPC identifier. Required for instance, ip, alb and asg target types. Default: null
+  #     connection_termination: false        # (Optional) Terminate connections at the end of the deregistration
+  #                                          #            timeout (NLB only). Default: false
+  #     deregistration_delay: 300            # (Optional) Seconds to wait before changing a target to unused (0-3600). Default: 300
+  #     slow_start: 0                        # (Optional) Slow start duration in seconds (0, or 30-900). Default: 0
+  #     ip_address_type: "ipv4"              # (Optional) One of: ipv4 | ipv6. Default: ipv4
+  #     load_balancing_algorithm_type: "round_robin" # (Optional) One of: round_robin | least_outstanding_requests |
+  #                                                  #            weighted_random. Default: round_robin
+  #     load_balancing_anomaly_mitigation: null      # (Optional) One of: on | off. Only valid together with
+  #                                                  #            weighted_random. Default: null
+  #     load_balancing_cross_zone_enabled: false     # (Optional) One of: true | false | use_load_balancer_configuration.
+  #                                                  #            Default: false
+  #     lambda_multi_value_headers_enabled: null     # (Optional) Enable multi-value headers for Lambda targets. Default: null
+  #     target_control_port: null            # (Optional) Port used by the load balancer for target control traffic. Default: null
+  #     stickiness:                          # (Optional) Sticky session configuration. Omit the block to keep provider defaults.
+  #       enabled: false                     # (Optional) Enable sticky sessions. Default: false
+  #       type: "lb_cookie"                  # (Optional) One of: lb_cookie | app_cookie | source_ip | source_ip_dest_ip |
+  #                                          #            source_ip_dest_ip_proto. Default: lb_cookie
+  #       cookie_duration: 86400             # (Optional) Cookie TTL in seconds (1-604800). Only for lb_cookie / app_cookie.
+  #                                          #            Default: 86400
+  #       cookie_name: null                  # (Optional) Application cookie name. Required when type is app_cookie. Default: null
+  #     health_check:                        # (Optional) Health check configuration. Omit the block entirely to keep the
+  #                                          #            provider/AWS defaults for the chosen protocol.
+  #       enabled: true                      # (Optional) Enable health checks. Must be true for ALB target groups. Default: true
+  #       healthy_threshold: null            # (Optional) Consecutive successes before healthy (2-10). Default: null (provider default)
+  #       interval: null                     # (Optional) Seconds between health checks (5-300). Default: null (provider default 30)
+  #       matcher: null                      # (Optional) HTTP/gRPC status codes considered healthy, e.g. "200-399". Default: null
+  #       path: null                         # (Optional) Destination path for the health check request. Default: null (provider default /)
+  #       port: "traffic-port"               # (Optional) "traffic-port" or a port number. Default: traffic-port
+  #       protocol: null                     # (Optional) One of: TCP | HTTP | HTTPS. Default: null (inherits target group protocol)
+  #       timeout: null                      # (Optional) Seconds before a health check times out (2-120). Default: null (provider default)
+  #       unhealthy_threshold: null          # (Optional) Consecutive failures before unhealthy (2-10). Default: null (provider default)
+  #     target_failover:                     # (Optional) Target failover policy (GENEVE target groups only).
+  #       on_deregistration: "no_rebalance"  # (Optional) One of: rebalance | no_rebalance. Default: no_rebalance
+  #       on_unhealthy: "no_rebalance"       # (Optional) One of: rebalance | no_rebalance. Default: no_rebalance
+  #                                          #            "on_failure" is still accepted as a deprecated alias.
+  #     target_health_state:                 # (Optional) Target health state settings (TCP / TLS target groups only).
+  #       enable_unhealthy_connection_termination: true # (Optional) Terminate connections to unhealthy targets. Default: true
+  #       unhealthy_draining_interval: null             # (Optional) Seconds an unhealthy target stays in draining state
+  #                                                     #            (0-360000). Only valid when connection termination is
+  #                                                     #            disabled. Default: null
+  #     target_group_health:                 # (Optional) Target group health requirements (ALB and NLB).
+  #       dns_failover:                      # (Optional) DNS failover requirements.
+  #         minimum_healthy_targets_count: "1"        # (Optional) Minimum healthy targets, or "off". Default: null (provider default 1)
+  #         minimum_healthy_targets_percentage: "off" # (Optional) Percentage 1-100, or "off". Default: null (provider default off)
+  #       unhealthy_state_routing:           # (Optional) Unhealthy state routing requirements.
+  #         minimum_healthy_targets_count: 1          # (Optional) Minimum healthy targets (1 to max targets). Default: null
+  #                                                   #            (provider default 1)
+  #         minimum_healthy_targets_percentage: "off" # (Optional) Percentage 1-100, or "off". Default: null (provider default off)
+  #     targets:                             # (Optional) List of targets to register in this target group. Default: []
+  #       - target_id: "i-0abc123"           # (Required) Instance ID, IP address, Lambda name/ARN, ALB ARN, or ASG name.
+  #         availability_zone: null          # (Optional) AZ for ip targets, or "all" for cross-zone registration. Default: null
+  #         port: null                       # (Optional) Port override for this target. Default: null
+  #         quic_server_id: null             # (Optional) QUIC server identifier for UDP/QUIC targets. Default: null
   target_groups: {}
 
-  # listener_rules: # (Optional) Map of listener rule definitions.
+  # listener_rules: # (Optional) Map of listener rule definitions to create.
   #                 # Default: {}
   #
   # listener_rules:
-  #   my-rule:
-  #     listener_port: 80        # Mutually exclusive with listener_arn
-  #     priority: 100
-  #     actions:
-  #       - type: "forward"      # forward | redirect | fixed-response | authenticate-oidc | authenticate-cognito
-  #         tg_ref: "api"        # Reference a key in target_groups for forward actions
-  #     conditions:
+  #   <rule_key>:
+  #     name: null                 # (Optional) Value of the Name tag on the rule. Default: "<rule_key>/<system_name>"
+  #     listener_port: 80          # (Optional) Port used to look up the listener on lb_arn. Mutually exclusive with listener_arn.
+  #     listener_arn: ""           # (Optional) Direct ARN of the listener. Mutually exclusive with listener_port.
+  #     priority: 100              # (Optional) Rule evaluation priority (1-50000). Lower numbers evaluated first. Default: 100
+  #     actions:                   # (Required) Ordered list of actions to perform when conditions match.
+  #       - type: "forward"        # (Required) One of: forward | redirect | fixed-response | authenticate-oidc |
+  #                                #            authenticate-cognito
+  #         order: null            # (Optional) Explicit action evaluation order (1-50000). Default: null (declaration order)
+  #         tg_ref: "api"          # (Optional) Key into target_groups; resolved to that target group's ARN. Default: null
+  #         target_group_arn: null # (Optional) Explicit target group ARN, for target groups not created by this module.
+  #                                #            Ignored when tg_ref is set. Default: null
+  #         forward:               # (Optional) Weighted forward configuration for type=forward (up to 5 target groups).
+  #           target_group:
+  #             - tg_ref: "api"    # (Optional) Key into target_groups. Mutually exclusive with arn.
+  #               arn: null        # (Optional) Explicit target group ARN. Required when tg_ref is not set.
+  #               weight: 100      # (Optional) Traffic weight (0-999). Default: null (provider default 1)
+  #           stickiness:
+  #             enabled: true      # (Optional) Enable target group stickiness for this forward action. Default: false
+  #             duration: 3600     # (Optional) Stickiness duration in seconds (1-604800). Default: 3600
+  #         fixed_response:        # (Optional) For type=fixed-response
+  #           content_type: "text/plain" # (Required) MIME type: text/plain | text/css | text/html |
+  #                                      #            application/javascript | application/json
+  #           message_body: "Not Found"  # (Optional) Response body text. Default: null
+  #           status_code: "404"         # (Optional) HTTP status code (2XX, 4XX, 5XX). Default: null (provider default 200)
+  #         redirect:              # (Optional) For type=redirect. Supports the ALB interpolation tokens
+  #                                #            #{host}, #{path}, #{port}, #{protocol}, #{query}
+  #           host: "#{host}"      # (Optional) Redirect hostname. Default: #{host}
+  #           path: "/#{path}"     # (Optional) Redirect path. Default: /#{path}
+  #           port: "#{port}"      # (Optional) Redirect port. Default: #{port}
+  #           protocol: "#{protocol}" # (Optional) One of: HTTP | HTTPS | #{protocol}. Default: #{protocol}
+  #           query: "#{query}"    # (Optional) Redirect query string. Default: #{query}
+  #           status_code: "HTTP_302" # (Optional) One of: HTTP_301 | HTTP_302. Default: HTTP_302
+  #         authenticate_oidc:     # (Optional) For type=authenticate-oidc
+  #           authorization_endpoint: "https://issuer.example.com/oauth2/authorize" # (Required)
+  #           token_endpoint: "https://issuer.example.com/oauth2/token"             # (Required)
+  #           user_info_endpoint: "https://issuer.example.com/oauth2/userinfo"      # (Required)
+  #           issuer: "https://issuer.example.com"   # (Required) The OIDC issuer identifier.
+  #           client_id: "client-id"                 # (Required) OAuth 2.0 client identifier.
+  #           client_secret: "s3cr3t"                # (Required) OAuth 2.0 client secret.
+  #           scope: "openid email"                  # (Optional) Space-separated list of OIDC scopes. Default: openid
+  #           on_unauthenticated_request: "authenticate" # (Optional) One of: deny | allow | authenticate. Default: authenticate
+  #           session_cookie_name: "oidc"            # (Optional) Session cookie name. Default: AWSELBAuthSessionCookie
+  #           session_timeout: 3600                  # (Optional) Session cookie expiry in seconds. Default: 604800
+  #           authentication_request_extra_params: {} # (Optional) Extra query parameters for the authorization endpoint.
+  #         authenticate_cognito:  # (Optional) For type=authenticate-cognito
+  #           user_pool_arn: "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc" # (Required)
+  #           user_pool_client_id: "client-id"       # (Required) Cognito User Pool Client ID.
+  #           user_pool_domain: "my-domain"          # (Required) Cognito User Pool domain prefix or full domain.
+  #           scope: "openid"                        # (Optional) Space-separated OIDC scopes. Default: openid
+  #           on_unauthenticated_request: "authenticate" # (Optional) One of: deny | allow | authenticate. Default: authenticate
+  #           session_cookie_name: "cognito"         # (Optional) Session cookie name. Default: AWSELBAuthSessionCookie
+  #           session_timeout: 3600                  # (Optional) Session cookie expiry in seconds. Default: 604800
+  #           authentication_request_extra_params: {} # (Optional) Extra query parameters for the authorization endpoint.
+  #         jwt_validation:        # (Optional) Native JWT validation performed by the load balancer before forwarding.
+  #           issuer: "https://issuer.example.com"   # (Required) Expected JWT issuer.
+  #           jwks_endpoint: "https://issuer.example.com/.well-known/jwks.json" # (Required) JWKS endpoint URL.
+  #           additional_claims:                     # (Optional) Up to 10 additional claims that must match. Default: []
+  #             - name: "role"                       # (Required) Claim name.
+  #               format: "single-string"            # (Required) One of: single-string | string-array |
+  #                                                  #            space-separated-values
+  #               values: ["admin"]                  # (Required) Accepted claim values.
+  #     conditions:                # (Required) List of conditions; all must match for the rule to apply.
+  #       - host_header:
+  #           - values: ["app.example.com"]          # (Optional) Host header values to match (wildcards supported).
+  #                                                  #            Mutually exclusive with regex_values.
+  #             regex_values: []                     # (Optional) Regular expressions matched against the host header. Default: null
   #       - path_pattern:
-  #           - values: ["/api/*"]
-  listener_rules: {}
-  ```
+  #           - values: ["/api/*"]                   # (Optional) Path pattern values to match (wildcards supported).
+  #                                                  #            Mutually exclusive with regex_values.
+  #             regex_values: []                     # (Optional) Regular expressions matched against the path. Default: null
+  #       - http_header:
+  #           - http_header_name: "X-Custom-Header"  # (Required) HTTP header name.
+  #             values: ["abc"]                      # (Optional) Values to match (wildcards supported).
+  #                                                  #            Mutually exclusive with regex_values.
+  #             regex_values: []                     # (Optional) Regular expressions matched against the header value. Default: null
+  #       - http_request_method:
+  #           - values: ["GET", "POST"]              # (Required) HTTP methods to match. Uppercase A-Z, hyphen and underscore only.
+  #       - query_string:
+  #           - key: "version"                       # (Optional) Query string key. Default: null (matches any key)
+  #             value: "v2"                          # (Required) Query string value to match.
+  #                                                  #            "query_strings" is still accepted as a deprecated alias
+  #                                                  #            for the "query_string" key.
+  #       - source_ip:
+  #           - values: ["10.0.0.0/8"]               # (Required) Source IP CIDR blocks to match.
+  #             ip_address_type: null                # (Optional) One of: ipv4 | ipv6. Default: null (provider default)
+  #     transforms:                # (Optional) Up to 2 request transforms applied before the request is forwarded. Default: []
+  #       - type: "url-rewrite"                      # (Required) One of: url-rewrite | host-header-rewrite
+  #         url_rewrite_config:                      # (Optional) Required when type is url-rewrite.
+  #           rewrite:
+  #             regex: "^/api/(.*)$"                 # (Required) Regular expression matched against the request path.
+  #             replace: "/$1"                       # (Required) Replacement path.
+  #         host_header_rewrite_config:              # (Optional) Required when type is host-header-rewrite.
+  #           rewrite:
+  #             regex: "^(.*)\\.example\\.com$"      # (Required) Regular expression matched against the host header.
+  #             replace: "$1.internal"               # (Required) Replacement host header.
+  listener_rules: {}  ```
 
   Generated `terragrunt.hcl`
   --------------------------
@@ -177,14 +333,14 @@ usage: |-
   }
 
   inputs = {
-    is_hub        = false
-    org           = local.env_vars.org
-    spoke_def     = local.spoke_vars.spoke
-    lb_arn        = dependency.alb.outputs.load_balancer_arn
-    target_groups = try(local.local_vars.target_groups, {})
+    is_hub         = false
+    org            = local.env_vars.org
+    spoke_def      = local.spoke_vars.spoke
+    lb_arn         = dependency.alb.outputs.load_balancer_arn
+    target_groups  = try(local.local_vars.target_groups, {})
     listener_rules = try(local.local_vars.listener_rules, {})
-    cross_account = local.cross_account
-    extra_tags    = local.tags
+    cross_account  = local.cross_account
+    extra_tags     = local.tags
   }
   ```
 
@@ -245,6 +401,7 @@ examples: |-
       priority: 10
       actions:
         - type: "authenticate-oidc"
+          order: 1
           authenticate_oidc:
             authorization_endpoint: "https://issuer.example.com/oauth2/authorize"
             token_endpoint: "https://issuer.example.com/oauth2/token"
@@ -257,10 +414,173 @@ examples: |-
             session_cookie_name: "oidc"
             session_timeout: 3600
         - type: "forward"
+          order: 2
           tg_ref: "auth"
       conditions:
         - host_header:
             - values: ["auth.example.com"]
+  ```
+
+  Example 3: Weighted blue/green forward with target group health requirements
+  ----------------------------------------------------------------------------
+
+  A single forward action can split traffic across up to five target groups and
+  keep a client pinned to the group it first landed on. `target_group_health`
+  keeps the target group serving only while enough targets are healthy.
+
+  `inputs.yaml`:
+
+  ```yaml
+  target_groups:
+    blue:
+      target_type: "ip"
+      vpc_id: "vpc-0abc123def456"
+      port: 8080
+      protocol: "HTTP"
+      load_balancing_algorithm_type: "weighted_random"
+      load_balancing_anomaly_mitigation: "on"
+      health_check:
+        enabled: true
+        path: "/healthz"
+      target_group_health:
+        dns_failover:
+          minimum_healthy_targets_count: "1"
+          minimum_healthy_targets_percentage: "off"
+        unhealthy_state_routing:
+          minimum_healthy_targets_count: 1
+          minimum_healthy_targets_percentage: "off"
+      targets:
+        - target_id: "10.0.1.10"
+          port: 8080
+    green:
+      target_type: "ip"
+      vpc_id: "vpc-0abc123def456"
+      port: 8080
+      protocol: "HTTP"
+      health_check:
+        enabled: true
+        path: "/healthz"
+      targets:
+        - target_id: "10.0.2.10"
+          port: 8080
+
+  listener_rules:
+    blue-green:
+      listener_port: 443
+      priority: 20
+      actions:
+        - type: "forward"
+          forward:
+            target_group:
+              - tg_ref: "blue"
+                weight: 90
+              - tg_ref: "green"
+                weight: 10
+            stickiness:
+              enabled: true
+              duration: 600
+      conditions:
+        - path_pattern:
+            - values: ["/app/*"]
+  ```
+
+  Example 4: Regex conditions, request method matching and URL rewrite
+  ---------------------------------------------------------------------
+
+  Conditions accept `regex_values` instead of `values` for host headers, path
+  patterns and HTTP headers. `transforms` rewrite the path or host header before
+  the request reaches the target.
+
+  `inputs.yaml`:
+
+  ```yaml
+  listener_rules:
+    api-v2:
+      listener_port: 443
+      priority: 30
+      actions:
+        - type: "forward"
+          tg_ref: "api"
+      conditions:
+        - host_header:
+            - regex_values: ["^api-[a-z0-9]+\\.example\\.com$"]
+        - path_pattern:
+            - values: ["/v2/*"]
+        - http_request_method:
+            - values: ["GET", "POST", "PUT"]
+        - source_ip:
+            - values: ["10.0.0.0/8"]
+              ip_address_type: "ipv4"
+      transforms:
+        - type: "url-rewrite"
+          url_rewrite_config:
+            rewrite:
+              regex: "^/v2/(.*)$"
+              replace: "/$1"
+        - type: "host-header-rewrite"
+          host_header_rewrite_config:
+            rewrite:
+              regex: "^.*$"
+              replace: "internal.example.com"
+  ```
+
+  Example 5: JWT validation at the load balancer
+  -----------------------------------------------
+
+  The load balancer validates the bearer token before forwarding, so the target
+  never sees unauthenticated traffic.
+
+  `inputs.yaml`:
+
+  ```yaml
+  listener_rules:
+    api-jwt:
+      listener_port: 443
+      priority: 40
+      actions:
+        - type: "forward"
+          tg_ref: "api"
+          jwt_validation:
+            issuer: "https://issuer.example.com"
+            jwks_endpoint: "https://issuer.example.com/.well-known/jwks.json"
+            additional_claims:
+              - name: "role"
+                format: "single-string"
+                values: ["admin", "operator"]
+      conditions:
+        - path_pattern:
+            - values: ["/secure/*"]
+  ```
+
+  Example 6: NLB with Auto Scaling Group targets and target health state
+  -----------------------------------------------------------------------
+
+  `target_type: "asg"` is a module-level convenience: the target group is created
+  with `target_type = "instance"` and each `target_id` is attached as an Auto
+  Scaling Group traffic source, so the ASG keeps registration in sync.
+
+  `inputs.yaml`:
+
+  ```yaml
+  target_groups:
+    tcp-app:
+      target_type: "asg"
+      vpc_id: "vpc-0abc123def456"
+      port: 5000
+      protocol: "TCP"
+      preserve_client_ip: true
+      proxy_protocol_v2: true
+      connection_termination: false
+      load_balancing_cross_zone_enabled: true
+      health_check:
+        enabled: true
+        protocol: "TCP"
+        interval: 10
+      target_health_state:
+        enable_unhealthy_connection_termination: false
+        unhealthy_draining_interval: 300
+      targets:
+        - target_id: "my-app-asg"
   ```
 
 # How to get started quickly
@@ -290,7 +610,9 @@ quickstart: |-
      terragrunt apply
      ```
 
-  6. Outputs include `target_groups`, `target_group_attachments`, and `listener_rules`.
+  6. Outputs include `target_groups`, `target_group_arns`,
+     `target_group_attachments`, `autoscaling_traffic_source_attachments`,
+     `listener_rules` and `listener_rule_arns`.
 
 include:
   - "docs/targets.md"

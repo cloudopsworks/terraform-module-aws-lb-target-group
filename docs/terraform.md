@@ -3,19 +3,19 @@
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.35 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.62 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.35 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.62.0 |
 
 ## Modules
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_tags"></a> [tags](#module\_tags) | cloudopsworks/tags/local | 1.0.9 |
+| <a name="module_tags"></a> [tags](#module\_tags) | cloudopsworks/tags/local | 1.0.10 |
 
 ## Resources
 
@@ -47,6 +47,9 @@
 
 | Name | Description |
 |------|-------------|
-| <a name="output_listener_rules"></a> [listener\_rules](#output\_listener\_rules) | n/a |
-| <a name="output_target_group_attachments"></a> [target\_group\_attachments](#output\_target\_group\_attachments) | n/a |
-| <a name="output_target_groups"></a> [target\_groups](#output\_target\_groups) | n/a |
+| <a name="output_autoscaling_traffic_source_attachments"></a> [autoscaling\_traffic\_source\_attachments](#output\_autoscaling\_traffic\_source\_attachments) | Map of Auto Scaling Group traffic source attachments keyed by attachment ID, with the Auto Scaling Group name. |
+| <a name="output_listener_rule_arns"></a> [listener\_rule\_arns](#output\_listener\_rule\_arns) | Map of listener rule ARNs keyed by the listener\_rules input key, for referencing rules from other modules. |
+| <a name="output_listener_rules"></a> [listener\_rules](#output\_listener\_rules) | Map of created listener rules keyed by rule ID, with the rule ARN, listener ARN, priority, actions and conditions. |
+| <a name="output_target_group_arns"></a> [target\_group\_arns](#output\_target\_group\_arns) | Map of target group ARNs keyed by the target\_groups input key, for referencing target groups from other modules. |
+| <a name="output_target_group_attachments"></a> [target\_group\_attachments](#output\_target\_group\_attachments) | Map of target group attachments keyed by attachment ID, with the target group ARN, target ID, availability zone and port. |
+| <a name="output_target_groups"></a> [target\_groups](#output\_target\_groups) | Map of created target groups keyed by target group name, with name, ARN, ARN suffix, port, protocol, target type and attached load balancer ARNs. |
